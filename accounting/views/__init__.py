@@ -1,0 +1,15 @@
+from accounting.views.account_views import *  # noqa
+from accounting.views.fiscal_views import *  # noqa
+from accounting.views.journal_views import *  # noqa
+from accounting.views.voucher_views import *  # noqa
+from accounting.views.payment_views import *  # noqa
+from accounting.views.bank_views import *  # noqa
+from accounting.views.payable_views import *  # noqa
+from accounting.views.receivable_views import *  # noqa
+from accounting.views.budget_views import *  # noqa
+from accounting.views.tax_views import *  # noqa
+from accounting.views.analytics_views import *  # noqa
+from accounting.views.currency_views import *  # noqa
+from accounting.views.report_views import *  # noqa
+from accounting.views.settings_views import *  # noqa
+from accounting.views.dashboard_views import *  # noqa

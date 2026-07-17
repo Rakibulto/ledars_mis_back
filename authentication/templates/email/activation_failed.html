@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Activation Failed</title>
+        <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+            max-width: 600px;
+            width: 100%;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            padding: 60px 40px;
+            text-align: center;
+            position: relative;
+        }
+        
+        .error-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            display: block;
+            animation: shake 0.5s ease-in-out;
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+        
+        .header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            color: white;
+        }
+        
+        .header p {
+            font-size: 18px;
+            opacity: 0.9;
+            font-weight: 300;
+        }
+        
+        .content {
+            padding: 50px 40px;
+            text-align: center;
+        }
+        
+        .error-message {
+            font-size: 18px;
+            color: #2c3e50;
+            margin-bottom: 30px;
+            line-height: 1.6;
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 10px;
+            padding: 20px;
+        }
+        
+        .error-icon-small {
+            font-size: 24px;
+            margin-bottom: 10px;
+            display: block;
+        }
+        
+        .possible-reasons {
+            text-align: left;
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+            margin: 30px 0;
+        }
+        
+        .possible-reasons h3 {
+            color: #dc3545;
+            font-size: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .reasons-list {
+            list-style: none;
+            space-y: 15px;
+        }
+        
+        .reasons-list li {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 10px;
+            border-left: 4px solid #dc3545;
+        }
+        
+        .reason-icon {
+            font-size: 20px;
+            margin-right: 15px;
+            color: #dc3545;
+            flex-shrink: 0;
+        }
+        
+        .reason-text {
+            color: #555;
+            line-height: 1.5;
+        }
+        
+        .solutions-section {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border-radius: 15px;
+            padding: 30px;
+            margin: 30px 0;
+        }
+        
+        .solutions-section h3 {
+            color: #1976d2;
+            font-size: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .action-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 25px;
+        }
+        
+        .action-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 15px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .primary-button {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+        }
+        
+        .primary-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+        }
+        
+        .secondary-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .secondary-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .outline-button {
+            background: transparent;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+        
+        .outline-button:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+        }
+        
+        .support-section {
+            background: #fff;
+            border: 2px solid #e9ecef;
+            border-radius: 15px;
+            padding: 30px;
+            margin: 30px 0;
+            text-align: center;
+        }
+        
+        .support-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            display: block;
+        }
+        
+        .support-title {
+            font-size: 20px;
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        
+        .support-text {
+            color: #6c757d;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+        
+        .contact-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+            color: white;
+            text-decoration: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .contact-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(23, 162, 184, 0.3);
+        }
+        
+        .footer {
+            background: #f8f9fa;
+            padding: 20px 40px;
+            text-align: center;
+            border-top: 1px solid #e9ecef;
+            font-size: 14px;
+            color: #6c757d;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 15px;
+            }
+            
+            .header {
+                padding: 40px 30px;
+            }
+            
+            .header h1 {
+                font-size: 28px;
+            }
+            
+            .error-icon {
+                font-size: 60px;
+            }
+            
+            .content {
+                padding: 40px 30px;
+            }
+            
+            .possible-reasons, .solutions-section, .support-section {
+                padding: 25px 20px;
+            }
+            
+            .action-buttons {
+                grid-template-columns: 1fr;
+            }
+            
+            .footer {
+                padding: 20px 30px;
+            }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.6s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        </style>
+    </head>
+    <body>
+        <div class="container fade-in">
+            <div class="header">
+                <span class="error-icon">😔</span>
+                <h1>Activation Failed</h1>
+                <p>We couldn't activate your account</p>
+            </div>
+            <div class="content">
+                <div class="error-message">
+                    <span class="error-icon-small">⚠️</span>
+                    <strong>Account activation was unsuccessful.</strong>
+                    <br>
+                    Don't worry, this can happen for several reasons and we're here to help you resolve it quickly.
+                </div>
+                <div class="possible-reasons">
+                    <h3>🔍 Possible Reasons</h3>
+                    <ul class="reasons-list">
+                        <li>
+                            <span class="reason-icon">⏰</span>
+                            <div class="reason-text">
+                                <strong>Expired Link:</strong> The activation link may have expired. Links are valid for 24 hours for security.
+                            </div>
+                        </li>
+                        <li>
+                            <span class="reason-icon">🔗</span>
+                            <div class="reason-text">
+                                <strong>Invalid Link:</strong> The activation link might be corrupted or incomplete.
+                            </div>
+                        </li>
+                        <li>
+                            <span class="reason-icon">✅</span>
+                            <div class="reason-text">
+                                <strong>Already Activated:</strong> Your account might already be activated and ready to use.
+                            </div>
+                        </li>
+                        <li>
+                            <span class="reason-icon">🔧</span>
+                            <div class="reason-text">
+                                <strong>Technical Issue:</strong> There might be a temporary server issue preventing activation.
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+                <div class="solutions-section">
+                    <h3>🚀 What You Can Do</h3>
+                    <p style="color: #555; margin-bottom: 20px; text-align: center;">Try these solutions to get your account activated:</p>
+                    <div class="action-buttons">
+                        <a href="https://Ledar's.raktch.com/" target="_blank" rel="noopener noreferrer" class="action-button primary-button">🔑 Try Logging In</a>
+                    </div>
+                </div>
+                <div class="support-section">
+                    <span class="support-icon">🆘</span>
+                    <div class="support-title">Still Need Help?</div>
+                    <div class="support-text">
+                        Our support team is standing by to help you resolve this issue.
+                        We typically respond within 2 hours during business hours.
+                    </div>
+                    <a href="mailto:support@yoursite.com" class="contact-button">📧 Contact Support</a>
+                </div>
+            </div>
+            <div class="footer">
+                <p>If you continue to experience issues, please don't hesitate to reach out to our support team.</p>
+            </div>
+        </div>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add click tracking for buttons
+            const buttons = document.querySelectorAll('.action-button');
+            buttons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    // Add a subtle animation on click
+                    this.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        this.style.transform = '';
+                    }, 150);
+                });
+            });
+            
+            // Auto-check if user is already logged in
+            setTimeout(() => {
+                // You can add logic here to check if user is already authenticated
+                // and redirect them appropriately
+            }, 2000);
+        });
+        </script>
+    </body>
+</html>
