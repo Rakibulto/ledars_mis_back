@@ -202,6 +202,24 @@ class ModulePermission(models.Model):
         return f"{self.user.email or self.user.username} - {self.module.name}"
 
 
+class PermissionGroup(models.Model):
+    """Reusable permission templates that can span multiple modules."""
+
+    name = models.CharField(max_length=120, unique=True)
+    description = models.TextField(blank=True, default="")
+    permissions = models.ManyToManyField(
+        Permission, related_name="permission_groups", blank=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class AllowedAnyIPLogins(models.Model):
     """IPs logged in through Allow any Ip"""
 

@@ -5,7 +5,7 @@ from djoser.serializers import UserCreateSerializer
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from authentication.models import User, Role
 from employee.models import Department
-from .models import CompanyInfo, User, Role, PreApprovedIP, Module, ModulePermission
+from .models import CompanyInfo, User, Role, PreApprovedIP, Module, ModulePermission, PermissionGroup
 
 
 # Dynamic Company Name Name and Logo Serializer
@@ -147,6 +147,51 @@ class ModulePermissionSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+
+class PermissionGroupSerializer(serializers.ModelSerializer):
+    permission_ids = serializers.ListField(
+        child=serializers.IntegerField(), write_only=True, required=False
+    )
+    permissions = PermissionSerializer(many=True, read_only=True)
+    module_keys = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PermissionGroup
+        fields = [
+            "id",
+            "name",
+            "description",
+            "permissions",
+            "permission_ids",
+            "module_keys",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_module_keys(self, obj):
+        return sorted(
+            {
+                perm.content_type.app_label
+                for perm in obj.permissions.select_related("content_type").all()
+            }
+        )
+
+    def create(self, validated_data):
+        permission_ids = validated_data.pop("permission_ids", [])
+        group = PermissionGroup.objects.create(**validated_data)
+        if permission_ids:
+            group.permissions.set(Permission.objects.filter(id__in=permission_ids))
+        return group
+
+    def update(self, instance, validated_data):
+        permission_ids = validated_data.pop("permission_ids", None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if permission_ids is not None:
+            instance.permissions.set(Permission.objects.filter(id__in=permission_ids))
+        return instance
 
 
 class UserSerializer(serializers.ModelSerializer):

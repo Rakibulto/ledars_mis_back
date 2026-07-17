@@ -2,7 +2,7 @@ from re import I
 from paginations import Pagination
 from django.db.models import Q
 from django.shortcuts import render
-from .models import CompanyInfo, User, PreApprovedIP, Role, Module, ModulePermission
+from .models import CompanyInfo, User, PreApprovedIP, Role, Module, ModulePermission, PermissionGroup
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
@@ -20,6 +20,7 @@ from .serializers import (
     SimpleUserSerializer,
     ModuleSerializer,
     ModulePermissionSerializer,
+    PermissionGroupSerializer,
 )
 import requests
 from django.http import HttpResponse, Http404
@@ -340,6 +341,57 @@ class SimpleUserViews(generics.ListAPIView):
     filterset_fields = [
         "username",
     ]
+
+
+def _is_superuser_only(user):
+    return bool(user and user.is_superuser)
+
+
+class PermissionGroupListCreateAPIView(generics.ListCreateAPIView):
+    serializer_class = PermissionGroupSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = PermissionGroup.objects.prefetch_related(
+            "permissions__content_type"
+        ).all()
+        module_key = self.request.query_params.get("module_key")
+        if module_key:
+            queryset = queryset.filter(
+                permissions__content_type__app_label=module_key
+            ).distinct()
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        if not _is_superuser_only(request.user):
+            raise PermissionDenied("Only superusers can manage permission groups.")
+        return super().list(request, *args, **kwargs)
+
+    def create(self, request, *args, **kwargs):
+        if not _is_superuser_only(request.user):
+            raise PermissionDenied("Only superusers can manage permission groups.")
+        return super().create(request, *args, **kwargs)
+
+
+class PermissionGroupRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = PermissionGroup.objects.prefetch_related("permissions__content_type").all()
+    serializer_class = PermissionGroupSerializer
+    permission_classes = [IsAuthenticated]
+
+    def retrieve(self, request, *args, **kwargs):
+        if not _is_superuser_only(request.user):
+            raise PermissionDenied("Only superusers can manage permission groups.")
+        return super().retrieve(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        if not _is_superuser_only(request.user):
+            raise PermissionDenied("Only superusers can manage permission groups.")
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        if not _is_superuser_only(request.user):
+            raise PermissionDenied("Only superusers can manage permission groups.")
+        return super().destroy(request, *args, **kwargs)
 
 
 class VendorTokenObtainPairView(TokenObtainPairView):
