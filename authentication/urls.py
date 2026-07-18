@@ -21,6 +21,8 @@ from .views import (
     ModuleListView,
     UserModulePermissionListCreateAPIView,
     UserModulePermissionRetrieveUpdateAPIView,
+    PermissionGroupListCreateAPIView,
+    PermissionGroupRetrieveUpdateDestroyAPIView,
     VendorTokenObtainPairView,
 )
 
@@ -81,6 +83,16 @@ urlpatterns = [
         "user-module-permissions/<int:user_id>/<int:pk>/",
         UserModulePermissionRetrieveUpdateAPIView.as_view(),
         name="user_module_permission_detail",
+    ),
+    path(
+        "permission-groups/",
+        PermissionGroupListCreateAPIView.as_view(),
+        name="permission_group_list_create",
+    ),
+    path(
+        "permission-groups/<int:pk>/",
+        PermissionGroupRetrieveUpdateDestroyAPIView.as_view(),
+        name="permission_group_detail",
     ),
     # Pre-approved IP management API endpoints
     path(

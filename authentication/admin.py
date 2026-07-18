@@ -8,6 +8,7 @@ from .models import (
     user_role_based_permissions,
     Module,
     ModulePermission,
+    PermissionGroup,
 )
 from django.contrib import admin
 from .models import User, Role, PreApprovedIP, AllowedAnyIPLogins
@@ -291,6 +292,13 @@ class ModulePermissionAdmin(ModelAdmin):
         "can_add",
         "can_view",
     )
+
+
+@admin.register(PermissionGroup)
+class PermissionGroupAdmin(ModelAdmin):
+    list_display = ("id", "name", "created_at", "updated_at")
+    search_fields = ("name",)
+    filter_horizontal = ("permissions",)
 
 
 @admin.register(Role)
