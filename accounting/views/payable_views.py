@@ -35,6 +35,112 @@ from accounting.serializers.payable_serializers import (
 from accounting.views.status_transition_mixin import StatusTransitionMixin
 
 
+def _parse_id_list(value):
+    """Accept list, comma-separated string, or JSON array string of ids."""
+    import json
+
+    if value is None or value == "":
+        return []
+    if isinstance(value, (list, tuple)):
+        return [int(v) for v in value if str(v).strip().isdigit()]
+    if isinstance(value, (int, float)):
+        return [int(value)]
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+        if stripped.startswith("["):
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                parsed = []
+            if isinstance(parsed, list):
+                return [int(v) for v in parsed if str(v).strip().isdigit()]
+        return [int(v) for v in stripped.split(",") if v.strip().isdigit()]
+    return []
+
+
+def _find_cash_at_bank_account(bank_account=None):
+    from accounting.models import Account
+
+    if bank_account and bank_account.account_id:
+        linked = Account.objects.filter(
+            pk=bank_account.account_id, is_active=True, is_deprecated=False
+        ).first()
+        if linked:
+            return linked
+
+    bank_name = ""
+    if bank_account:
+        bank_name = (bank_account.bank_name or bank_account.name or "").lower()
+
+    qs = Account.objects.filter(is_active=True, is_deprecated=False)
+    if bank_name:
+        token = next((part for part in bank_name.split() if len(part) > 2), None)
+        if token:
+            from django.db.models import Q
+
+            named = qs.filter(
+                Q(name__icontains="cash at bank") & Q(name__icontains=token)
+            ).first()
+            if named:
+                return named
+
+    return (
+        qs.filter(name__icontains="cash at bank").first()
+        or qs.filter(
+            account_type__classification="asset",
+            account_type__liquidity_type="bank_cash",
+        )
+        .exclude(code="1101")
+        .first()
+        or qs.filter(account_type__classification="asset", code__startswith="110")
+        .exclude(code="1101")
+        .first()
+    )
+
+
+def _find_cash_in_hand_account():
+    from accounting.models import Account
+
+    return (
+        Account.objects.filter(code="1101", is_active=True, is_deprecated=False).first()
+        or Account.objects.filter(
+            name__iexact="cash in hand", is_active=True, is_deprecated=False
+        ).first()
+        or Account.objects.filter(
+            name__icontains="cash in hand", is_active=True, is_deprecated=False
+        ).first()
+    )
+
+
+def _resolve_bill_payment_account(
+    *,
+    payment_account_id=None,
+    source_bank_account=None,
+    source_cheque=None,
+):
+    from accounting.models import Account
+
+    if payment_account_id:
+        explicit = Account.objects.filter(
+            pk=payment_account_id, is_active=True, is_deprecated=False
+        ).first()
+        if explicit:
+            return explicit
+
+    treasury_bank = source_bank_account
+    if not treasury_bank and source_cheque:
+        treasury_bank = source_cheque.bank_account
+
+    if treasury_bank or source_cheque:
+        cash_at_bank = _find_cash_at_bank_account(treasury_bank)
+        if cash_at_bank:
+            return cash_at_bank
+
+    return _find_cash_in_hand_account()
+
+
 class VendorViewSet(viewsets.ModelViewSet):
     queryset = Vendor.objects.select_related("payable_account").all()
     permission_classes = [IsAuthenticated]
@@ -59,7 +165,16 @@ class VendorViewSet(viewsets.ModelViewSet):
 
 
 class BillViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
-    queryset = Bill.objects.select_related("vendor", "project", "cost_center").all()
+    queryset = Bill.objects.select_related(
+        "vendor",
+        "project",
+        "cost_center",
+        "payment_account",
+        "work_order",
+        "primary_grn",
+        "source_bank_account",
+        "source_cheque",
+    ).prefetch_related("grns").all()
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["vendor", "status", "project", "bill_date"]
@@ -87,7 +202,8 @@ class BillViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
     def create_draft(self, request):
         """Create a bill draft from the workspace UI with auto-assigned journal and line."""
         from decimal import Decimal
-        from accounting.models import Journal, Account, CostCenter, Currency, FiscalPeriod, AnalyticAccount
+        from accounting.models import Journal, Account, CostCenter, Currency, FiscalPeriod, AnalyticAccount, BankAccount, Check
+        from procurement.models import WorkOrder, GoodsReceiptNote
         from projects.models import Project
 
         vendor_id = request.data.get("vendor")
@@ -112,7 +228,31 @@ class BillViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
         currency_id = request.data.get("currency")
         fiscal_period_id = request.data.get("fiscal_period")
         payment_account_id = request.data.get("payment_account")
+        work_order_id = request.data.get("work_order") or request.data.get("workOrder")
+        grn_ids = (
+            _parse_id_list(request.data.get("grns"))
+            or _parse_id_list(request.data.get("grn_ids"))
+            or _parse_id_list(request.data.get("grnSelections"))
+        )
+        source_bank_account_id = (
+            request.data.get("source_bank_account")
+            or request.data.get("bank_account")
+            or request.data.get("bankAccountId")
+        )
+        source_cheque_id = (
+            request.data.get("source_cheque")
+            or request.data.get("cheque")
+            or request.data.get("chequeId")
+        )
+        invoice_file = request.FILES.get("invoice_file")
+        mushuk_file = request.FILES.get("mushuk_file")
         lines_data = request.data.get("lines")
+        if isinstance(lines_data, str):
+            import json
+            try:
+                lines_data = json.loads(lines_data)
+            except json.JSONDecodeError:
+                lines_data = None
 
         if not vendor_id or not bill_date:
             return Response({"detail": "vendor and date are required."}, status=400)
@@ -169,10 +309,39 @@ class BillViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
         currency = Currency.objects.filter(pk=currency_id).first() if currency_id else None
         fiscal_period = FiscalPeriod.objects.filter(pk=fiscal_period_id).first() if fiscal_period_id else None
 
-        # Resolve payment account (Cash/Bank for the payment side)
-        payment_account = Account.objects.filter(pk=payment_account_id).first() if payment_account_id else None
+        work_order = WorkOrder.objects.filter(pk=work_order_id).first() if work_order_id else None
+        grn_records = list(GoodsReceiptNote.objects.filter(pk__in=grn_ids)) if grn_ids else []
+        primary_grn = grn_records[0] if grn_records else None
+        if not work_order and primary_grn and primary_grn.work_order_id:
+            work_order = primary_grn.work_order
+        if not goods_receipt_ref and grn_records:
+            goods_receipt_ref = ", ".join(
+                grn.grn_number for grn in grn_records if grn.grn_number
+            )
+
+        source_bank_account = (
+            BankAccount.objects.filter(pk=source_bank_account_id).first()
+            if source_bank_account_id
+            else None
+        )
+        source_cheque = (
+            Check.objects.select_related("bank_account")
+            .filter(pk=source_cheque_id)
+            .first()
+            if source_cheque_id
+            else None
+        )
+        if source_bank_account and source_cheque:
+            source_cheque = None
+
+        # Resolve payment account (Cash/Bank COA for the payment side)
+        payment_account = _resolve_bill_payment_account(
+            payment_account_id=payment_account_id,
+            source_bank_account=source_bank_account,
+            source_cheque=source_cheque,
+        )
         if not payment_account:
-            # Auto-select first bank/cash account
+            # Legacy fallback when chart of accounts is sparse
             payment_account = (
                 Account.objects.filter(
                     account_type__classification="asset",
@@ -216,7 +385,16 @@ class BillViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
                 currency=currency,
                 fiscal_period=fiscal_period,
                 payment_account=payment_account,
+                work_order=work_order,
+                primary_grn=primary_grn,
+                source_bank_account=source_bank_account,
+                source_cheque=source_cheque,
+                invoice_file=invoice_file,
+                mushuk_file=mushuk_file,
             )
+
+            if grn_records:
+                bill.grns.set(grn_records)
 
             if lines_data and isinstance(lines_data, list):
                 for line in lines_data:

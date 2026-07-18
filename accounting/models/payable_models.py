@@ -128,6 +128,51 @@ class Bill(models.Model):
     payment_proposal = models.CharField(max_length=200, blank=True)
     approval_route = models.CharField(max_length=100, blank=True)
     goods_receipt_ref = models.CharField(max_length=100, blank=True)
+    work_order = models.ForeignKey(
+        "procurement.WorkOrder",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="vendor_bills",
+    )
+    primary_grn = models.ForeignKey(
+        "procurement.GoodsReceiptNote",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="primary_vendor_bills",
+    )
+    grns = models.ManyToManyField(
+        "procurement.GoodsReceiptNote",
+        blank=True,
+        related_name="linked_vendor_bills",
+    )
+    source_bank_account = models.ForeignKey(
+        "accounting.BankAccount",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="vendor_bills",
+        help_text="Treasury bank account selected for payment",
+    )
+    source_cheque = models.ForeignKey(
+        "accounting.Check",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="vendor_bills",
+        help_text="Cheque selected for payment",
+    )
+    invoice_file = models.FileField(
+        upload_to="accounting/vendor_bills/invoices/%Y/%m/",
+        blank=True,
+        null=True,
+    )
+    mushuk_file = models.FileField(
+        upload_to="accounting/vendor_bills/mushuk/%Y/%m/",
+        blank=True,
+        null=True,
+    )
     created_by = models.ForeignKey(
         "authentication.User", on_delete=models.SET_NULL, null=True, blank=True
     )

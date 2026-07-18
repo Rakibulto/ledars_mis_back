@@ -7,8 +7,9 @@ from django.utils import timezone
 
 from authentication.models import User
 from employee.models import Department, Designation, Employee
-from inventory.models import Category, Item
+from inventory.models import Category, Item, UnitOfMeasure
 from projects.models import Project
+from procurement.models.office_models import OfficeManagement
 from vendorportal.models.models import VendorProfile
 from procurement.models import (
     # Core
@@ -19,7 +20,6 @@ from procurement.models import (
     ApprovalRequest,
     ApprovalHistory,
     # Requisition
-    OfficeManagement,
     MaterialRequisition,
     MaterialItem,
     # RFQ
@@ -317,21 +317,23 @@ class Command(BaseCommand):
             ),
             ("ITM-010", "Desktop Monitor", it_cat, sub_it_hw, Decimal("18000.00")),
         ]
+        # Ensure a UnitOfMeasure exists for items
+        uom, _ = UnitOfMeasure.objects.get_or_create(name="Piece")
+
         items = []
         for code, name, cat, subcat, price in item_data:
             item, _ = Item.objects.get_or_create(
-                item_code=code,
+                code=code,
                 defaults={
-                    "item_name": name,
+                    "name": name,
                     "category": cat,
                     "subcategory": subcat,
-                    "unit_price": price,
-                    "current_stock": random.randint(10, 200),
-                    "reorder_level": 5,
-                    "reorder_quantity": 10,
-                    "minimum_stock": 5,
-                    "maximum_stock": 500,
-                    "unit": "Piece",
+                    "cost": price,
+                    "sale_price": price,
+                    "on_hand": Decimal(str(random.randint(10, 200))),
+                    "reorder_level": Decimal("5"),
+                    "max_stock": Decimal("500"),
+                    "uom": uom,
                     "status": "Active",
                 },
             )
@@ -339,11 +341,16 @@ class Command(BaseCommand):
         return categories, items
 
     def _get_or_create_project(self, user):
+        # Ensure a Budget exists to attach to the project
+        budget, _ = Budget.objects.get_or_create(
+            name="Project Budget - CDP",
+            defaults={"allocated_amount": Decimal("5000000.00"), "created_by": user},
+        )
         proj, _ = Project.objects.get_or_create(
             code="PROJ-001",
             defaults={
                 "name": "Community Development Program",
-                "budget": Decimal("5000000.00"),
+                "budget": budget,
                 "start_date": date.today() - timedelta(days=90),
                 "end_date": date.today() + timedelta(days=270),
                 "status": "Active",
@@ -365,7 +372,11 @@ class Command(BaseCommand):
                 name=name,
                 defaults={
                     "address": addr,
-                    "district": "Dhaka" if "Dhaka" in name else "Chattogram" if "Chittagong" in name else "Sylhet",
+                    "district": (
+                        "Dhaka"
+                        if "Dhaka" in name
+                        else "Chattogram" if "Chittagong" in name else "Sylhet"
+                    ),
                     "created_by": user,
                 },
             )
@@ -576,11 +587,13 @@ class Command(BaseCommand):
             ("Services", "Professional and consulting services"),
         ]
         cats = []
-        for name, desc in cat_data:
+        for i, (name, desc) in enumerate(cat_data):
             c, _ = Category.objects.get_or_create(
                 name=name,
                 defaults={
+                    "code": f"RFQ-{i+1:03d}",
                     "description": desc,
+                    "level": "Main",
                     "status": "Active",
                     "created_by": user,
                 },
@@ -628,21 +641,18 @@ class Command(BaseCommand):
         for i, data in enumerate(rfq_data):
             rfq = RFQ.objects.create(
                 rfq_category=rfq_categories[data["cat_idx"]],
-                requisition=(
-                    requisitions[data["req_idx"]]
-                    if data["req_idx"] is not None
-                    else None
-                ),
                 rfq_title=data["title"],
                 description=data["description"],
-                submission_deadline=date.today()
+                submission_deadline=timezone.now()
                 + timedelta(days=random.randint(7, 30)),
                 status=data["status"],
-                suppliers_count=3,
+                vendors_count=3,
                 responses_received=random.randint(1, 3),
                 total_estimated_value=Decimal(str(random.randint(50000, 500000))),
                 created_by=user,
             )
+            if data["req_idx"] is not None:
+                rfq.requisitions.add(requisitions[data["req_idx"]])
             selected_items = [items[idx] for idx in data["item_indices"]]
             rfq.items.set(selected_items)
             rfqs.append(rfq)
@@ -657,16 +667,16 @@ class Command(BaseCommand):
             rfq_items = list(rfq.items.all())
             for sup_idx in range(min(3, len(suppliers))):
                 supplier = suppliers[sup_idx]
-                # Check unique_together (rfq, supplier)
-                if VendorQuotation.objects.filter(rfq=rfq, supplier=supplier).exists():
+                # Check unique_together (rfq, vendor)
+                if VendorQuotation.objects.filter(rfq=rfq, vendor=supplier).exists():
                     quotations.append(
-                        VendorQuotation.objects.get(rfq=rfq, supplier=supplier)
+                        VendorQuotation.objects.get(rfq=rfq, vendor=supplier)
                     )
                     continue
-                status_choices = ["Submitted", "Under Review", "Accepted", "Rejected"]
+                status_choices = ["under_review", "accepted", "rejected"]
                 vq = VendorQuotation.objects.create(
                     rfq=rfq,
-                    supplier=supplier,
+                    vendor=supplier,
                     submission_date=timezone.now()
                     - timedelta(days=random.randint(1, 15)),
                     validity_date=date.today() + timedelta(days=60),
@@ -719,9 +729,9 @@ class Command(BaseCommand):
             cs = ComparativeStatement.objects.create(
                 rfq=rfq,
                 title=f"Comparative Analysis - {rfq.rfq_title}",
-                recommended_supplier=suppliers[0] if suppliers else None,
+                recommended_vendor=suppliers[0] if suppliers else None,
                 justification="Lowest price with acceptable quality and delivery terms.",
-                status="Approved" if rfq_idx < 2 else "Draft",
+                status="approved" if rfq_idx < 2 else "under_review",
                 created_by=user,
                 approved_by=user if rfq_idx < 2 else None,
                 approved_date=timezone.now() if rfq_idx < 2 else None,
@@ -738,7 +748,7 @@ class Command(BaseCommand):
                         comparative=cs,
                         item=item,
                         quotation=quot,
-                        supplier=quot.supplier,
+                        vendor=quot.vendor,
                         quoted_price=price,
                         quantity=qty,
                         is_lowest=(q_idx == 0),
@@ -756,11 +766,12 @@ class Command(BaseCommand):
             award = Award.objects.create(
                 comparative_statement=cs,
                 rfq=cs.rfq,
+                vendor_profile=suppliers[0] if suppliers else None,
                 award_date=date.today() - timedelta(days=random.randint(1, 15)),
                 total_amount=Decimal(str(random.randint(100000, 500000))),
                 justification="Selected based on lowest price with best delivery terms as per comparative analysis.",
                 terms_and_conditions="Standard procurement terms apply. Delivery within 15 working days.",
-                status="Accepted" if i == 0 else "Notified",
+                status="accepted" if i == 0 else "notified",
                 awarded_by=user,
             )
             awards.append(award)
@@ -793,10 +804,14 @@ class Command(BaseCommand):
                         },
                     )
             # Regret notification to another supplier
-            other_supplier = [s for s in suppliers if s.id != (winner.id if winner else None)]
+            other_supplier = [
+                s for s in suppliers if s.id != (winner.id if winner else None)
+            ]
             if other_supplier:
                 regret_profile = (
-                    VendorProfile.objects.filter(email__iexact=other_supplier[0].email).first()
+                    VendorProfile.objects.filter(
+                        email__iexact=other_supplier[0].email
+                    ).first()
                     if other_supplier[0].email
                     else None
                 )
@@ -804,14 +819,14 @@ class Command(BaseCommand):
                     AwardNotification.objects.get_or_create(
                         award=award,
                         vendor_profile=regret_profile,
-                    defaults={
-                        "notification_type": "Regret",
-                        "message": "We regret to inform you that your quotation was not selected for this procurement.",
-                        "is_sent": True,
-                        "sent_date": timezone.now() - timedelta(days=2),
-                        "sent_by": user,
-                    },
-                )
+                        defaults={
+                            "notification_type": "Regret",
+                            "message": "We regret to inform you that your quotation was not selected for this procurement.",
+                            "is_sent": True,
+                            "sent_date": timezone.now() - timedelta(days=2),
+                            "sent_by": user,
+                        },
+                    )
         self.stdout.write("  Created award notifications")
 
     # ── Work Orders ───────────────────────────────────────────
@@ -843,7 +858,7 @@ class Command(BaseCommand):
         for i, data in enumerate(wo_data):
             wo = WorkOrder.objects.create(
                 award=awards[i] if i < len(awards) else None,
-                supplier=suppliers[data["supplier_idx"]],
+                vendor=suppliers[data["supplier_idx"]],
                 delivery_date=date.today() + timedelta(days=random.randint(7, 30)),
                 delivery_address="Head Office, 123 Main Street, Dhaka",
                 terms_and_conditions="Standard terms and conditions apply.",
@@ -856,9 +871,12 @@ class Command(BaseCommand):
             for idx, item_i in enumerate(data["item_indices"]):
                 WorkOrderItem.objects.create(
                     work_order=wo,
-                    item=items[item_i],
-                    quantity=data["quantities"][idx],
-                    unit_price=data["prices"][idx],
+                    description=items[item_i].name,
+                    specification=(
+                        f"Qty: {data['quantities'][idx]}, "
+                        f"Unit Price: {data['prices'][idx]}"
+                    ),
+                    delivered=0,
                 )
             work_orders.append(wo)
         self.stdout.write(f"  Created {len(work_orders)} work orders")
@@ -893,7 +911,7 @@ class Command(BaseCommand):
         wo = work_orders[0]
         grn = GoodsReceiptNote.objects.create(
             work_order=wo,
-            supplier=wo.supplier,
+            supplier=wo.vendor,
             receipt_date=date.today() - timedelta(days=5),
             delivery_note_number="DN-2025-001",
             invoice_number="INV-2025-0042",
@@ -903,16 +921,17 @@ class Command(BaseCommand):
             received_by=employees[2] if len(employees) > 2 else employees[0],
             created_by=user,
         )
-        wo_items = wo.work_order_items.all()
-        for wi in wo_items:
+        wo_items = list(wo.work_order_items.all())
+        for idx, wi in enumerate(wo_items):
+            inv_item = items[idx] if idx < len(items) else None
             GRNItem.objects.create(
                 grn=grn,
-                item=wi.item,
-                ordered_quantity=wi.quantity,
-                received_quantity=wi.quantity,
-                accepted_quantity=wi.quantity,
+                item=inv_item,
+                ordered_quantity=10,
+                received_quantity=10,
+                accepted_quantity=10,
                 rejected_quantity=0,
-                unit_price=wi.unit_price,
+                unit_price=inv_item.cost if inv_item else Decimal("100.00"),
                 condition="Good",
             )
         grns.append(grn)
@@ -922,7 +941,7 @@ class Command(BaseCommand):
             wo2 = work_orders[1]
             grn2 = GoodsReceiptNote.objects.create(
                 work_order=wo2,
-                supplier=wo2.supplier,
+                supplier=wo2.vendor,
                 receipt_date=date.today() - timedelta(days=2),
                 delivery_note_number="DN-2025-002",
                 invoice_number="INV-2025-0056",
@@ -932,16 +951,17 @@ class Command(BaseCommand):
                 received_by=employees[2] if len(employees) > 2 else employees[0],
                 created_by=user,
             )
-            wo2_items = wo2.work_order_items.all()
-            for wi in wo2_items:
+            wo2_items = list(wo2.work_order_items.all())
+            for idx, wi in enumerate(wo2_items):
+                inv_item = items[idx + 3] if idx + 3 < len(items) else None
                 GRNItem.objects.create(
                     grn=grn2,
-                    item=wi.item,
-                    ordered_quantity=wi.quantity,
-                    received_quantity=max(1, wi.quantity - 1),
-                    accepted_quantity=max(1, wi.quantity - 1),
+                    item=inv_item,
+                    ordered_quantity=10,
+                    received_quantity=max(1, 9),
+                    accepted_quantity=max(1, 9),
                     rejected_quantity=0,
-                    unit_price=wi.unit_price,
+                    unit_price=inv_item.cost if inv_item else Decimal("100.00"),
                     condition="Good",
                 )
             grns.append(grn2)
