@@ -23,6 +23,29 @@ class ProjectManagementExpenseSequence(models.Model):
         return f"{self.key} - {self.last_number}"
 
 
+class ProjectManagementUnit(models.Model):
+    """Lookup units used by project plan sub-activities (not traditional UOM)."""
+
+    name = models.CharField(max_length=200, unique=True)
+    description = models.TextField(blank=True)
+    status = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_project_management_units",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class ProjectManagementProject(models.Model):
     PROJECT_TYPE_CHOICES = (
         ("Development", "Development"),
@@ -73,8 +96,8 @@ class ProjectManagementProject(models.Model):
         blank=True,
         related_name="managed_projects",
     )
-    project_type = models.CharField(max_length=40, choices=PROJECT_TYPE_CHOICES, default="Development")
-    implementation_type = models.CharField(max_length=40, choices=IMPLEMENTATION_TYPE_CHOICES, default="Direct")
+    project_type = models.JSONField(default=list, blank=True)
+    implementation_type = models.JSONField(default=list, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="Draft")
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
@@ -95,7 +118,8 @@ class ProjectManagementProject(models.Model):
     )
     sector = models.CharField(max_length=120, blank=True)
     location = models.CharField(max_length=255, blank=True)
-    target_beneficiaries = models.PositiveIntegerField(default=0)
+    # List of vulnerability type names selected as target beneficiaries
+    target_beneficiaries = models.JSONField(default=list, blank=True)
     background = models.TextField(blank=True)
     objectives = models.TextField(blank=True)
     expected_outcomes = models.TextField(blank=True)
@@ -133,6 +157,13 @@ class ProjectManagementProject(models.Model):
 
     def save(self, *args, **kwargs):
         is_new = self._state.adding
+
+        if not self.project_type:
+            self.project_type = ["Development"]
+        if not self.implementation_type:
+            self.implementation_type = ["Direct"]
+        if self.target_beneficiaries is None:
+            self.target_beneficiaries = []
 
         if not self.code:
             current_year = timezone.now().year
@@ -219,6 +250,8 @@ class ProjectManagementProjectPlan(models.Model):
         related_name="plans",
     )
     serial_no = models.PositiveIntegerField()
+    # Display/hierarchy code for main plan (e.g. "1", "2"). Sub plans use "{code}.{n}".
+    serial_code = models.CharField(max_length=40, blank=True)
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     duration_days = models.PositiveIntegerField(default=0)
@@ -255,6 +288,13 @@ class ProjectManagementProjectPlan(models.Model):
 
     def save(self, *args, **kwargs):
         update_fields = kwargs.get("update_fields")
+
+        if not self.serial_code and self.serial_no:
+            self.serial_code = str(self.serial_no)
+            if update_fields is not None:
+                update_fields = set(update_fields)
+                update_fields.add("serial_code")
+                kwargs["update_fields"] = list(update_fields)
 
         if self.status != "Completed":
             self.approval_status = "Pending Approval"
@@ -293,6 +333,52 @@ class ProjectManagementProjectPlan(models.Model):
         if self.status != new_status:
             self.status = new_status
             self.save(update_fields=["status", "updated_at"])
+
+
+class ProjectManagementPlanSubPlan(models.Model):
+    """Nested plan step under a main ProjectManagementProjectPlan."""
+
+    plan = models.ForeignKey(
+        ProjectManagementProjectPlan,
+        on_delete=models.CASCADE,
+        related_name="sub_plans",
+    )
+    serial_code = models.CharField(max_length=40)
+    title = models.CharField(max_length=255, blank=True)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    unit_type = models.CharField(max_length=50, blank=True)
+    unit_no = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    unit_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    cost = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    sort_order = models.PositiveIntegerField(default=1)
+    assigned_users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name="assigned_project_management_plan_sub_plans",
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        unique_together = ("plan", "serial_code")
+
+    def __str__(self):
+        return f"{self.serial_code} - {self.title or 'Sub plan'}"
+
+    def save(self, *args, **kwargs):
+        unit_no = self.unit_no if self.unit_no is not None else 0
+        unit_cost = self.unit_cost if self.unit_cost is not None else 0
+        self.cost = unit_no * unit_cost
+
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            update_fields = set(update_fields)
+            update_fields.add("cost")
+            kwargs["update_fields"] = list(update_fields)
+
+        super().save(*args, **kwargs)
 
 
 class ProjectManagementPlanWorkItem(models.Model):

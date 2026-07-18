@@ -1,6 +1,7 @@
 import decimal
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from rest_framework import serializers
 
 from donor.models import Donor
@@ -10,13 +11,146 @@ from .models import (
     ProjectManagementExpense,
     ProjectManagementExpenseItem,
     ProjectManagementPlanAttachment,
+    ProjectManagementPlanSubPlan,
     ProjectManagementPlanWorkItem,
     ProjectManagementProject,
     ProjectManagementProjectMaterial,
     ProjectManagementProjectPlan,
+    ProjectManagementUnit,
 )
 
 User = get_user_model()
+
+
+class ProjectManagementUnitSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProjectManagementUnit
+        fields = [
+            "id",
+            "name",
+            "description",
+            "status",
+            "created_by",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["created_by", "created_at", "updated_at"]
+
+
+class ProjectOverviewSubPlanSerializer(serializers.ModelSerializer):
+    assigned_users = serializers.SerializerMethodField()
+    deliverable_date = serializers.DateField(source="end_date", read_only=True)
+    row_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProjectManagementPlanSubPlan
+        fields = [
+            "id",
+            "serial_code",
+            "title",
+            "unit_type",
+            "unit_no",
+            "start_date",
+            "end_date",
+            "deliverable_date",
+            "assigned_users",
+            "row_status",
+            "sort_order",
+        ]
+
+    def get_assigned_users(self, obj):
+        return [
+            {"id": user.id, "username": user.username}
+            for user in obj.assigned_users.all().order_by("username")
+        ]
+
+    def get_row_status(self, obj):
+        from django.utils import timezone
+
+        today = timezone.localdate()
+        parent_status = getattr(obj.plan, "status", None)
+        if parent_status == "Completed":
+            return "completed"
+        deliverable = obj.end_date
+        if deliverable and deliverable < today:
+            return "overdue"
+        return "pending"
+
+
+class ProjectOverviewPlanSerializer(serializers.ModelSerializer):
+    sub_plans = ProjectOverviewSubPlanSerializer(many=True, read_only=True)
+    assigned_users = serializers.SerializerMethodField()
+    work_items = serializers.SerializerMethodField()
+    deliverable_date = serializers.DateField(source="end_date", read_only=True)
+    row_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProjectManagementProjectPlan
+        fields = [
+            "id",
+            "serial_no",
+            "serial_code",
+            "title",
+            "description",
+            "duration_days",
+            "status",
+            "start_date",
+            "end_date",
+            "deliverable_date",
+            "row_status",
+            "assigned_users",
+            "work_items",
+            "sub_plans",
+        ]
+
+    def get_assigned_users(self, obj):
+        return [
+            {"id": user.id, "username": user.username}
+            for user in obj.assigned_users.all().order_by("username")
+        ]
+
+    def get_work_items(self, obj):
+        # Local import avoids circular ordering with WorkItem serializer definition
+        return ProjectManagementPlanWorkItemSerializer(
+            obj.work_items.all().order_by("sort_order", "id"),
+            many=True,
+        ).data
+
+    def get_row_status(self, obj):
+        from django.utils import timezone
+
+        today = timezone.localdate()
+        if obj.status == "Completed":
+            return "completed"
+        deliverable = obj.end_date
+        if deliverable and deliverable < today:
+            return "overdue"
+        return "pending"
+
+
+class ProjectOverviewSerializer(serializers.ModelSerializer):
+    plans = ProjectOverviewPlanSerializer(many=True, read_only=True)
+    assigned_users = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProjectManagementProject
+        fields = [
+            "id",
+            "code",
+            "title",
+            "short_name",
+            "status",
+            "start_date",
+            "end_date",
+            "assigned_users",
+            "plans",
+        ]
+
+    def get_assigned_users(self, obj):
+        return [
+            {"id": user.id, "username": user.username}
+            for user in obj.assigned_users.all().order_by("username")
+        ]
 
 
 class ProjectManagementPlanWorkItemSerializer(serializers.ModelSerializer):
@@ -244,6 +378,53 @@ class ProjectManagementPlanAttachmentSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+class ProjectManagementPlanSubPlanSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)
+    assigned_users = serializers.SerializerMethodField()
+    assigned_user_ids = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        source="assigned_users",
+        many=True,
+        write_only=True,
+        required=False,
+    )
+
+    class Meta:
+        model = ProjectManagementPlanSubPlan
+        fields = [
+            "id",
+            "serial_code",
+            "title",
+            "start_date",
+            "end_date",
+            "unit_type",
+            "unit_no",
+            "unit_cost",
+            "cost",
+            "sort_order",
+            "assigned_users",
+            "assigned_user_ids",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["cost", "created_at", "updated_at"]
+
+    def get_assigned_users(self, obj):
+        return [
+            {"id": user.id, "username": user.username}
+            for user in obj.assigned_users.all().order_by("username")
+        ]
+
+    def validate(self, attrs):
+        start_date = attrs.get("start_date", getattr(self.instance, "start_date", None))
+        end_date = attrs.get("end_date", getattr(self.instance, "end_date", None))
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError(
+                {"end_date": "End date cannot be before start date."}
+            )
+        return attrs
+
+
 class ProjectManagementPlanSerializer(serializers.ModelSerializer):
     assigned_users = serializers.SerializerMethodField()
     assigned_user_ids = serializers.PrimaryKeyRelatedField(
@@ -255,6 +436,7 @@ class ProjectManagementPlanSerializer(serializers.ModelSerializer):
     )
     project_id = serializers.IntegerField(source="project.id", read_only=True)
     work_items = ProjectManagementPlanWorkItemSerializer(many=True, required=False)
+    sub_plans = ProjectManagementPlanSubPlanSerializer(many=True, required=False)
     attachments = ProjectManagementPlanAttachmentSerializer(many=True, read_only=True)
     approved_by = serializers.SerializerMethodField()
 
@@ -263,6 +445,7 @@ class ProjectManagementPlanSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "serial_no",
+            "serial_code",
             "title",
             "description",
             "duration_days",
@@ -275,6 +458,7 @@ class ProjectManagementPlanSerializer(serializers.ModelSerializer):
             "project_id",
             "assigned_users",
             "assigned_user_ids",
+            "sub_plans",
             "work_items",
             "attachments",
             "created_at",
@@ -302,17 +486,20 @@ class ProjectManagementPlanSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         assigned_users = validated_data.pop("assigned_users", [])
         work_items_data = validated_data.pop("work_items", [])
+        sub_plans_data = validated_data.pop("sub_plans", [])
         plan = ProjectManagementProjectPlan.objects.create(**validated_data)
 
         if assigned_users:
             plan.assigned_users.set(assigned_users)
 
+        self._replace_sub_plans(plan, sub_plans_data)
         self._replace_work_items(plan, work_items_data)
         return plan
 
     def update(self, instance, validated_data):
         assigned_users = validated_data.pop("assigned_users", None)
         work_items_data = validated_data.pop("work_items", None)
+        sub_plans_data = validated_data.pop("sub_plans", None)
         validated_data.pop("approval_status", None)
         validated_data.pop("approved_by", None)
         validated_data.pop("approved_at", None)
@@ -324,10 +511,36 @@ class ProjectManagementPlanSerializer(serializers.ModelSerializer):
         if assigned_users is not None:
             instance.assigned_users.set(assigned_users)
 
+        if sub_plans_data is not None:
+            self._replace_sub_plans(instance, sub_plans_data)
+
         if work_items_data is not None:
             self._replace_work_items(instance, work_items_data)
 
         return instance
+
+    def _replace_sub_plans(self, plan, sub_plans_data):
+        if sub_plans_data is None:
+            return
+
+        plan.sub_plans.all().delete()
+        main_code = plan.serial_code or str(plan.serial_no)
+
+        for index, sub_data in enumerate(sub_plans_data, start=1):
+            sub_data = dict(sub_data)
+            assigned_users = sub_data.pop("assigned_users", [])
+            sub_data.pop("id", None)
+            sub_data.pop("cost", None)  # always derived from unit_no * unit_cost
+            serial_code = sub_data.pop("serial_code", None) or f"{main_code}.{index}"
+            sort_order = sub_data.pop("sort_order", None) or index
+            sub_plan = ProjectManagementPlanSubPlan.objects.create(
+                plan=plan,
+                serial_code=serial_code,
+                sort_order=sort_order,
+                **sub_data,
+            )
+            if assigned_users:
+                sub_plan.assigned_users.set(assigned_users)
 
     def _replace_work_items(self, plan, work_items_data):
         if work_items_data is None:
@@ -592,6 +805,7 @@ class ProjectManagementProjectSerializer(serializers.ModelSerializer):
             )
         return attrs
 
+    @transaction.atomic
     def create(self, validated_data):
         plans_data = validated_data.pop("plans", [])
         materials_data = validated_data.pop("materials", [])
@@ -604,6 +818,7 @@ class ProjectManagementProjectSerializer(serializers.ModelSerializer):
         self._sync_materials_expense(project)
         return project
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         plans_data = validated_data.pop("plans", None)
         materials_data = validated_data.pop("materials", None)
@@ -632,22 +847,37 @@ class ProjectManagementProjectSerializer(serializers.ModelSerializer):
             return
 
         project.plans.all().delete()
+        plan_serializer = ProjectManagementPlanSerializer()
+
         for index, plan_data in enumerate(plans_data, start=1):
             plan_data = dict(plan_data)
             assigned_users = plan_data.pop("assigned_users", [])
             work_items_data = plan_data.pop("work_items", [])
+            sub_plans_data = plan_data.pop("sub_plans", [])
             serial_no = plan_data.pop("serial_no", None) or index
+            serial_code = plan_data.pop("serial_code", None) or str(serial_no)
+
+            # Derive main plan dates from sub plans when present
+            if sub_plans_data:
+                starts = [s.get("start_date") for s in sub_plans_data if s.get("start_date")]
+                ends = [s.get("end_date") for s in sub_plans_data if s.get("end_date")]
+                if starts and not plan_data.get("start_date"):
+                    plan_data["start_date"] = min(starts)
+                if ends and not plan_data.get("end_date"):
+                    plan_data["end_date"] = max(ends)
+
             plan = ProjectManagementProjectPlan.objects.create(
                 project=project,
                 serial_no=serial_no,
+                serial_code=serial_code,
                 **plan_data,
             )
             if assigned_users:
                 plan.assigned_users.set(assigned_users)
+
+            plan_serializer._replace_sub_plans(plan, sub_plans_data)
             if work_items_data:
-                ProjectManagementPlanSerializer()._replace_work_items(
-                    plan, work_items_data
-                )
+                plan_serializer._replace_work_items(plan, work_items_data)
 
     def _replace_materials(self, project, materials_data):
         if materials_data is None:

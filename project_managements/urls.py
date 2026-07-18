@@ -9,9 +9,15 @@ from .views import (
     ProjectManagementPlanWorkItemViewSet,
     ProjectManagementPlanViewSet,
     ProjectManagementProjectViewSet,
+    ProjectManagementUnitViewSet,
 )
 
 router = DefaultRouter()
+router.register(
+    r"ngo-project-units",
+    ProjectManagementUnitViewSet,
+    basename="project-management-units",
+)
 router.register(
     r"ngo-project-dashboard",
     ProjectManagementDashboardViewSet,

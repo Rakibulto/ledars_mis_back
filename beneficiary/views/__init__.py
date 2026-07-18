@@ -3,6 +3,7 @@ from .core import (
     ServiceRHViewSet,
     ServiceCategoryViewSet,
     ServiceDeliveryViewSet,
+    VulnerabilityTypeViewSet,
 )
 from .case_management import (
     CaseFileViewSet,
@@ -48,6 +49,7 @@ from .dashboard import DashboardKPIView, DemographicsView, BeneficiaryAnalyticsV
 
 __all__ = [
     "BeneficiaryViewSet", "ServiceRHViewSet", "ServiceCategoryViewSet", "ServiceDeliveryViewSet",
+    "VulnerabilityTypeViewSet",
     "CaseFileViewSet", "ProtectionCaseViewSet", "ConsentRecordViewSet", "SafeguardingIncidentViewSet",
     "VulnerabilityAssessmentViewSet", "ImpactMeasurementViewSet", "OutcomeIndicatorViewSet", "NeedsAssessmentViewSet",
     "HouseholdProfilingViewSet", "CoverageAreaViewSet",

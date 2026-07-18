@@ -4,10 +4,20 @@ from .models import (
     ProjectManagementExpense,
     ProjectManagementExpenseItem,
     ProjectManagementPlanAttachment,
+    ProjectManagementPlanSubPlan,
     ProjectManagementProject,
     ProjectManagementProjectMaterial,
     ProjectManagementProjectPlan,
+    ProjectManagementUnit,
 )
+
+
+@admin.register(ProjectManagementUnit)
+class ProjectManagementUnitAdmin(admin.ModelAdmin):
+    list_display = ("name", "status", "created_by", "created_at")
+    list_filter = ("status",)
+    search_fields = ("name", "description")
+    readonly_fields = ("created_at", "updated_at")
 
 
 class ProjectManagementProjectPlanInline(admin.TabularInline):
@@ -67,13 +77,36 @@ class ProjectManagementProjectAdmin(admin.ModelAdmin):
     inlines = [ProjectManagementProjectPlanInline, ProjectManagementProjectMaterialInline]
 
 
+class ProjectManagementPlanSubPlanInline(admin.TabularInline):
+    model = ProjectManagementPlanSubPlan
+    extra = 0
+    filter_horizontal = ("assigned_users",)
+
+
 @admin.register(ProjectManagementProjectPlan)
 class ProjectManagementProjectPlanAdmin(admin.ModelAdmin):
-    list_display = ("project", "serial_no", "title", "status", "duration_days")
+    list_display = ("project", "serial_no", "serial_code", "title", "status", "duration_days")
     list_filter = ("status",)
-    search_fields = ("project__title", "title", "description")
+    search_fields = ("project__title", "title", "description", "serial_code")
     filter_horizontal = ("assigned_users",)
-    inlines = [ProjectManagementPlanAttachmentInline]
+    inlines = [ProjectManagementPlanSubPlanInline, ProjectManagementPlanAttachmentInline]
+
+
+@admin.register(ProjectManagementPlanSubPlan)
+class ProjectManagementPlanSubPlanAdmin(admin.ModelAdmin):
+    list_display = (
+        "serial_code",
+        "title",
+        "plan",
+        "unit_type",
+        "unit_no",
+        "unit_cost",
+        "cost",
+        "start_date",
+        "end_date",
+    )
+    search_fields = ("serial_code", "title", "plan__title", "plan__project__title", "unit_type")
+    filter_horizontal = ("assigned_users",)
 
 
 @admin.register(ProjectManagementPlanAttachment)
