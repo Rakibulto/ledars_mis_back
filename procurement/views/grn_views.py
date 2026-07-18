@@ -25,8 +25,13 @@ from ..serializers.grn_serializers import (
 class GoodsReceiptNoteViewSet(CreatedByMixin, viewsets.ModelViewSet):
     queryset = (
         GoodsReceiptNote.objects.select_related(
-            "work_order", "purchase_order", "direct_purchase",
-            "supplier", "received_by", "created_by", "receive_location",
+            "work_order",
+            "purchase_order",
+            "direct_purchase",
+            "supplier",
+            "received_by",
+            "created_by",
+            "receive_location",
         )
         .prefetch_related("grn_items__item")
         .all()
@@ -35,10 +40,21 @@ class GoodsReceiptNoteViewSet(CreatedByMixin, viewsets.ModelViewSet):
     pagination_class = Pagination
 
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    search_fields = ["grn_number", "supplier__name", "direct_vendor_name", "invoice_number", "status"]
+    search_fields = [
+        "grn_number",
+        "supplier__name",
+        "direct_vendor_name",
+        "invoice_number",
+        "status",
+    ]
     ordering_fields = ["created_at", "receipt_date", "total_received_value"]
     ordering = ["-created_at"]
-    filterset_fields = ["status", "supplier", "work_order"]
+    filterset_fields = {
+        "id": ["in", "exact"],
+        "status": ["iexact"],
+        "supplier": ["exact"],
+        "work_order": ["exact"],
+    }
 
     @staticmethod
     def _extract_item_name(grn_item):
@@ -116,15 +132,21 @@ class GoodsReceiptNoteViewSet(CreatedByMixin, viewsets.ModelViewSet):
 
         return getattr(grn, "created_by", None)
 
-    def _build_receipt_stock_move(self, grn, inventory_item, quantity, *, destination_office=None):
+    def _build_receipt_stock_move(
+        self, grn, inventory_item, quantity, *, destination_office=None
+    ):
         if not inventory_item or quantity <= 0:
             return None
 
-        supplier_name = self._get_supplier_display_name(grn.supplier) or "Vendor receipt"
+        supplier_name = (
+            self._get_supplier_display_name(grn.supplier) or "Vendor receipt"
+        )
         if destination_office:
             destination_location = destination_office.name
         else:
-            destination_location = (getattr(inventory_item, "location", None) or "").strip() or "Main inventory"
+            destination_location = (
+                getattr(inventory_item, "location", None) or ""
+            ).strip() or "Main inventory"
 
         return StockMove(
             date=self._movement_timestamp(grn.receipt_date),

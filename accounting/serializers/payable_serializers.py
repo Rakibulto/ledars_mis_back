@@ -65,6 +65,19 @@ class BillListSerializer(serializers.ModelSerializer):
     project_name = serializers.CharField(
         source="project.name", read_only=True, default=""
     )
+    work_order_number = serializers.CharField(
+        source="work_order.wo_number", read_only=True, default=""
+    )
+    payment_account_name = serializers.CharField(
+        source="payment_account.name", read_only=True, default=""
+    )
+    source_bank_account_name = serializers.CharField(
+        source="source_bank_account.name", read_only=True, default=""
+    )
+    source_cheque_number = serializers.CharField(
+        source="source_cheque.check_number", read_only=True, default=""
+    )
+    grn_numbers = serializers.SerializerMethodField()
     # Frontend alias fields
     number = serializers.CharField(source="bill_number", read_only=True)
     supplier_id = serializers.IntegerField(source="vendor.id", read_only=True)
@@ -97,14 +110,30 @@ class BillListSerializer(serializers.ModelSerializer):
             "status",
             "status_display",
             "project_name",
+            "work_order",
+            "work_order_number",
+            "primary_grn",
+            "grn_numbers",
             "dispute_flag",
             "match_status",
             "payment_proposal",
             "approval_route",
             "goods_receipt_ref",
             "payment_account",
+            "payment_account_name",
+            "source_bank_account",
+            "source_bank_account_name",
+            "source_cheque",
+            "source_cheque_number",
+            "invoice_file",
+            "mushuk_file",
             "created_at",
         ]
+
+    def get_grn_numbers(self, obj):
+        if hasattr(obj, "_prefetched_objects_cache") and "grns" in obj._prefetched_objects_cache:
+            return [grn.grn_number for grn in obj.grns.all() if grn.grn_number]
+        return list(obj.grns.values_list("grn_number", flat=True))
 
 
 class BillDetailSerializer(serializers.ModelSerializer):
@@ -118,12 +147,25 @@ class BillDetailSerializer(serializers.ModelSerializer):
     balance_due = serializers.DecimalField(source="amount_due", max_digits=18, decimal_places=2, read_only=True)
     paid_amount_alias = serializers.DecimalField(source="amount_paid", max_digits=18, decimal_places=2, read_only=True)
     supplier_invoice_ref = serializers.CharField(source="vendor_reference", read_only=True)
+    work_order_number = serializers.CharField(
+        source="work_order.wo_number", read_only=True, default=""
+    )
+    grn_ids = serializers.SerializerMethodField()
+    grn_numbers = serializers.SerializerMethodField()
     payment_account_detail = serializers.SerializerMethodField()
+    source_bank_account_detail = serializers.SerializerMethodField()
+    source_cheque_detail = serializers.SerializerMethodField()
     journal_entry_items = serializers.SerializerMethodField()
 
     class Meta:
         model = Bill
         fields = "__all__"
+
+    def get_grn_ids(self, obj):
+        return list(obj.grns.values_list("id", flat=True))
+
+    def get_grn_numbers(self, obj):
+        return list(obj.grns.values_list("grn_number", flat=True))
 
     def get_payment_account_detail(self, obj):
         if obj.payment_account:
@@ -131,6 +173,27 @@ class BillDetailSerializer(serializers.ModelSerializer):
                 "id": obj.payment_account.id,
                 "code": obj.payment_account.code,
                 "name": obj.payment_account.name,
+            }
+        return None
+
+    def get_source_bank_account_detail(self, obj):
+        if obj.source_bank_account:
+            return {
+                "id": obj.source_bank_account.id,
+                "name": obj.source_bank_account.name,
+                "bank_name": obj.source_bank_account.bank_name,
+                "account_number": obj.source_bank_account.account_number,
+            }
+        return None
+
+    def get_source_cheque_detail(self, obj):
+        if obj.source_cheque:
+            return {
+                "id": obj.source_cheque.id,
+                "check_number": obj.source_cheque.check_number,
+                "payee": obj.source_cheque.payee,
+                "amount": obj.source_cheque.amount,
+                "bank_account": obj.source_cheque.bank_account_id,
             }
         return None
 

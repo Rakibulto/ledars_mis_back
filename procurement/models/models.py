@@ -57,7 +57,7 @@ class PurchaseOrder(models.Model):
             self.po_items.aggregate(
                 total=Sum(
                     ExpressionWrapper(
-                        F("quantity") * F("item__unit_price"),
+                        F("quantity") * F("item__cost"),
                         output_field=DecimalField(max_digits=12, decimal_places=2),
                     )
                 )
@@ -158,7 +158,7 @@ class PurchaseRequisition(models.Model):
             self.pr_items.aggregate(
                 total=Sum(
                     ExpressionWrapper(
-                        F("quantity") * F("item__unit_price"),
+                        F("quantity") * F("item__cost"),
                         output_field=DecimalField(max_digits=12, decimal_places=2),
                     )
                 )
@@ -210,7 +210,6 @@ class ItemPR(models.Model):
         # Auto update after delete
         if pr:
             pr.calculate_estimated_amount()
-
 
 
 class ApprovalRequest(models.Model):

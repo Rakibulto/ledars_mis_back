@@ -470,6 +470,7 @@ class WorkOrderSerializer(serializers.ModelSerializer):
     )
     deliveryDeadline = serializers.DateField(source="delivery_date", read_only=True)
     totalAmount = serializers.SerializerMethodField()
+    taxRate = serializers.SerializerMethodField()
     amountPaid = serializers.DecimalField(
         source="amount_paid", max_digits=15, decimal_places=2, read_only=True
     )
@@ -522,6 +523,7 @@ class WorkOrderSerializer(serializers.ModelSerializer):
             "notes",
             "organization",
             "vendor",
+            "taxRate",
             "items",
             "termsAndConditions",
             "approvalChain",
@@ -603,6 +605,24 @@ class WorkOrderSerializer(serializers.ModelSerializer):
             except (TypeError, ValueError, InvalidOperation):
                 continue
         return total
+
+    def get_taxRate(self, obj):
+        """Derive the effective VAT rate (%) from the linked comparative
+        statement's financials (vat / subtotal * 100). Falls back to 0."""
+        award = getattr(obj, "award", None)
+        cs = getattr(award, "comparative_statement", None) if award else None
+        if not cs:
+            return 0
+        financial = cs.vendor_financials.first()
+        if not financial or not financial.subtotal:
+            return 0
+        try:
+            rate = (
+                Decimal(str(financial.vat)) / Decimal(str(financial.subtotal))
+            ) * 100
+            return float(round(rate, 2))
+        except (TypeError, ValueError, InvalidOperation, ZeroDivisionError):
+            return 0
 
     def get_approvedBy(self, obj):
         if not obj.approved_by:
