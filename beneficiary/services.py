@@ -22,10 +22,9 @@ def get_beneficiary_summary():
 
     beneficiary_stats = Beneficiary.objects.aggregate(
         total_beneficiaries=Count("id"),
-        active=Count("id", filter=Q(status="Active")),
-        graduated=Count("id", filter=Q(status="Graduated")),
         male=Count("id", filter=Q(sex="Male")),
         female=Count("id", filter=Q(sex="Female")),
+        transgender=Count("id", filter=Q(sex="Transgender")),
     )
     Service_stats = ServiceRH.objects.aggregate(
         Services=Count("id"), total_value=Sum("value")
@@ -312,11 +311,9 @@ def get_exit_graduation_summary():
 def get_dashboard_kpis():
     now = timezone.now()
     total = Beneficiary.objects.count()
-    active = Beneficiary.objects.filter(status="Active").count()
     new_this_month = Beneficiary.objects.filter(
         created_at__year=now.year, created_at__month=now.month
     ).count()
-    graduated = Beneficiary.objects.filter(status="Graduated").count()
     male = Beneficiary.objects.filter(sex="Male").count()
     female = Beneficiary.objects.filter(sex="Female").count()
     children = Beneficiary.objects.filter(age__lt=18).count()
@@ -355,7 +352,7 @@ def get_dashboard_kpis():
 
     filled_fields = 0
     total_fields = 0
-    check_fields = ["name", "age", "sex", "contact", "division", "district", "nid"]
+    check_fields = ["name", "age", "sex", "contact", "district", "nid", "household_id"]
     for b in Beneficiary.objects.all().values(*check_fields):
         for f in check_fields:
             total_fields += 1
@@ -365,9 +362,9 @@ def get_dashboard_kpis():
 
     return {
         "total_beneficiaries": total,
-        "active_beneficiaries": active,
+        "active_beneficiaries": total,
         "new_this_month": new_this_month,
-        "graduated": graduated,
+        "graduated": 0,
         "male": male,
         "female": female,
         "children": children,
@@ -405,28 +402,31 @@ def get_demographics():
         count = Beneficiary.objects.filter(q).count()
         by_age_group.append({"label": label, "value": count})
 
-    by_division = list(
-        Beneficiary.objects.exclude(division__isnull=True)
-        .exclude(division="")
-        .values("division")
+    by_district = list(
+        Beneficiary.objects.exclude(district__isnull=True)
+        .exclude(district="")
+        .values("district")
         .annotate(count=Count("id"))
         .order_by("-count")
     )
-    by_division = [{"label": d["division"], "value": d["count"]} for d in by_division]
+    by_district = [{"label": d["district"], "value": d["count"]} for d in by_district]
 
-    by_status = list(
-        Beneficiary.objects.values("status")
+    by_education = list(
+        Beneficiary.objects.exclude(education_level__isnull=True)
+        .exclude(education_level="")
+        .values("education_level")
         .annotate(count=Count("id"))
-        .order_by("status")
+        .order_by("-count")
     )
-    by_status = [
-        {"label": s["status"] or "Unknown", "value": s["count"]} for s in by_status
+    by_education = [
+        {"label": e["education_level"] or "Unknown", "value": e["count"]}
+        for e in by_education
     ]
 
     vuln_counts = {}
-    for b in Beneficiary.objects.exclude(vulnerability_type__isnull=True).values_list(
-        "vulnerability_type", flat=True
-    ):
+    for b in Beneficiary.objects.exclude(
+        vulnerability_categories__isnull=True
+    ).values_list("vulnerability_categories", flat=True):
         if isinstance(b, list):
             for v in b:
                 vuln_counts[v] = vuln_counts.get(v, 0) + 1
@@ -437,8 +437,9 @@ def get_demographics():
     return {
         "by_sex": by_sex,
         "by_age_group": by_age_group,
-        "by_division": by_division,
-        "by_status": by_status,
+        "by_division": by_district,
+        "by_district": by_district,
+        "by_status": by_education,
         "by_vulnerability": by_vulnerability,
     }
 

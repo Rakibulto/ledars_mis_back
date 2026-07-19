@@ -46,7 +46,7 @@ class BeneficiaryViewSet(CreatedByMixin, ModelViewSet):
             Value(0),
             output_field=DecimalField(max_digits=12, decimal_places=2),
         ),
-    ).select_related("created_by", "project")
+    ).select_related("created_by").prefetch_related("projects", "donors")
     serializer_class = BeneficiarySerializer
 
     permission_classes = [IsAuthenticated]
@@ -54,7 +54,7 @@ class BeneficiaryViewSet(CreatedByMixin, ModelViewSet):
 
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_class = BeneficiaryFilter
-    search_fields = ["ben_code", "name", "email", "project__name"]
+    search_fields = ["ben_code", "name", "contact", "nid", "projects__name", "district", "household_id"]
     ordering_fields = ["created_at", "total_services_received", "total_services_value"]
     ordering = ["-created_at"]
 
