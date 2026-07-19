@@ -80,6 +80,14 @@ from ..views.settings_views import (
     LockDateViewSet,
 )
 from ..views.dashboard_views import AccountingDashboardView
+from ..views.gateway_views import (
+    DayBookView,
+    CashBankBookView,
+    AccountLedgerView,
+    ProfitAndLossView,
+    BalanceSheetView,
+    ProjectStatementView,
+)
 from ..views.asset_views import (
     AssetCategoryViewSet,
     AssetViewSet,
@@ -380,4 +388,31 @@ urlpatterns = [
     path("acc-settings/1/", AccountingSettingsView.as_view()),
     # Dashboard
     path("acc-dashboard/", AccountingDashboardView.as_view(), name="acc-dashboard"),
+    # Tally Gateway display & essential reports
+    path("acc-gateway/day-book/", DayBookView.as_view(), name="acc-gateway-day-book"),
+    path(
+        "acc-gateway/cash-bank-book/",
+        CashBankBookView.as_view(),
+        name="acc-gateway-cash-bank-book",
+    ),
+    path(
+        "acc-gateway/account-ledger/",
+        AccountLedgerView.as_view(),
+        name="acc-gateway-account-ledger",
+    ),
+    path(
+        "acc-gateway/profit-and-loss/",
+        ProfitAndLossView.as_view(),
+        name="acc-gateway-profit-and-loss",
+    ),
+    path(
+        "acc-gateway/balance-sheet/",
+        BalanceSheetView.as_view(),
+        name="acc-gateway-balance-sheet",
+    ),
+    path(
+        "acc-gateway/project-statement/",
+        ProjectStatementView.as_view(),
+        name="acc-gateway-project-statement",
+    ),
 ]

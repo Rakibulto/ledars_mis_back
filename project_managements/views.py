@@ -18,6 +18,7 @@ from .services.expense_export_service import build_project_management_expense_pd
 
 from .models import (
     Advance,
+    Currency,
     ProjectManagementExpense,
     ProjectManagementPlanAttachment,
     ProjectManagementPlanWorkItem,
@@ -26,6 +27,7 @@ from .models import (
 )
 from .serializers import (
     AdvanceSerializer,
+    CurrencySerializer,
     ProjectManagementExpenseSerializer,
     ProjectManagementPlanAttachmentSerializer,
     ProjectManagementPlanWorkItemSerializer,
@@ -39,6 +41,20 @@ class ProjectManagementDashboardViewSet(viewsets.ViewSet):
 
     def list(self, request):
         return Response(build_project_management_dashboard_payload())
+
+
+class CurrencyViewSet(viewsets.ModelViewSet):
+    serializer_class = CurrencySerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = Pagination
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["status", "base_currency"]
+    search_fields = ["code", "name", "symbol", "base_currency"]
+    ordering_fields = ["code", "name", "exchange_rate", "created_at", "updated_at"]
+    ordering = ["code"]
+
+    def get_queryset(self):
+        return Currency.objects.all()
 
 
 class ProjectManagementProjectViewSet(CreatedByMixin, viewsets.ModelViewSet):
@@ -575,7 +591,7 @@ class ProjectManagementExpenseViewSet(CreatedByMixin, viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = Pagination
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["project", "plan", "status", "currency"]
+    filterset_fields = ["project", "plan", "status", "currency__code"]
     search_fields = [
         "invoice_number",
         "title",

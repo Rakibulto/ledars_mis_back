@@ -43,6 +43,10 @@ class AccountingSettings(models.Model):
     )
     auto_post_vouchers = models.BooleanField(default=False)
     require_voucher_approval = models.BooleanField(default=True)
+    use_ngo_project_required = models.BooleanField(
+        default=False,
+        help_text="When True, vouchers must have an NGO project (project_managements) before posting.",
+    )
     lock_date = models.DateField(null=True, blank=True)
     tax_lock_date = models.DateField(null=True, blank=True)
     enable_budget_control = models.BooleanField(default=True)

@@ -1,9 +1,16 @@
 from rest_framework import serializers
+from project_managements.models import Currency
 from .models import Donor, DonorLedger
 
 
 class DonorSerializer(serializers.ModelSerializer):
     created_by = serializers.CharField(source="created_by.username", read_only=True)
+    currency = serializers.SlugRelatedField(
+        slug_field="code",
+        queryset=Currency.objects.all(),
+        allow_null=True,
+        required=False,
+    )
 
     class Meta:
         model = Donor

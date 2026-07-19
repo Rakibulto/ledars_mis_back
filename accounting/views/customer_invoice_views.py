@@ -312,7 +312,7 @@ class CustomerInvoiceViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
                 ).first()
                 or Account.objects.filter(name__icontains="cash in hand", is_active=True).first()
                 or Account.objects.filter(name__icontains="bank", is_active=True).first()
-                or Account.objects.filter(code__in=["1101", "1102", "1103", "1104"], is_active=True).first()
+                or Account.objects.filter(code__in=["1101", "1102", "1103"], is_active=True).first()
             )
             if bank_account:
                 JournalItem.objects.create(

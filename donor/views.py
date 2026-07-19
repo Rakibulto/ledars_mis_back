@@ -22,7 +22,7 @@ class DonorViewSet(AtomicModelViewSetMixin, CreatedByMixin, viewsets.ModelViewSe
         "donor_code",
         "type",
         "status",
-        "currency",
+        "currency__code",
         "organization_name",
         "last_donation_date",
     ]

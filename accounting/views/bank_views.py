@@ -31,7 +31,7 @@ class BankAccountViewSet(viewsets.ModelViewSet):
     serializer_class = BankAccountSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter]
-    filterset_fields = ["status"]
+    filterset_fields = ["status", "account_type"]
     search_fields = ["name", "bank_name", "account_number"]
 
     @action(detail=True, methods=["post"], url_path="sync")
@@ -49,7 +49,15 @@ class BankTransactionViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
     serializer_class = BankTransactionSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["bank_account", "transaction_type", "status", "date"]
+    filterset_fields = [
+        "bank_account",
+        "transaction_type",
+        "status",
+        "date",
+        "ngo_project",
+        "voucher",
+        "is_system_generated",
+    ]
     search_fields = ["description", "reference"]
     ordering_fields = ["date", "amount"]
 

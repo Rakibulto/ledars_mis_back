@@ -26,12 +26,15 @@ class AccountGroupSerializer(serializers.ModelSerializer):
 
 
 class AccountListSerializer(serializers.ModelSerializer):
-    code = serializers.CharField(read_only=True)
+    code = serializers.CharField(required=False, allow_blank=True)
     account_type_name = serializers.CharField(
         source="account_type.name", read_only=True
     )
     classification = serializers.CharField(
         source="account_type.classification", read_only=True
+    )
+    liquidity_type = serializers.CharField(
+        source="account_type.liquidity_type", read_only=True, default=""
     )
     group_name = serializers.CharField(
         source="account_group.name", read_only=True, default=""
@@ -39,6 +42,10 @@ class AccountListSerializer(serializers.ModelSerializer):
     parent_name = serializers.CharField(
         source="parent.name", read_only=True, default=""
     )
+    ngo_project_title = serializers.CharField(
+        source="ngo_project.title", read_only=True, default=""
+    )
+    is_global = serializers.SerializerMethodField()
     tag_names = serializers.SerializerMethodField()
 
     class Meta:
@@ -47,9 +54,13 @@ class AccountListSerializer(serializers.ModelSerializer):
             "id",
             "code",
             "name",
+            "ngo_project",
+            "ngo_project_title",
+            "is_global",
             "account_type",
             "account_type_name",
             "classification",
+            "liquidity_type",
             "account_group",
             "group_name",
             "parent",
@@ -68,8 +79,34 @@ class AccountListSerializer(serializers.ModelSerializer):
     def get_tag_names(self, obj):
         return list(obj.tags.values_list("name", flat=True))
 
+    def get_is_global(self, obj):
+        return obj.ngo_project_id is None
+
+    def validate(self, attrs):
+        parent = attrs.get("parent")
+        if parent is None and self.instance:
+            parent = attrs.get("parent", self.instance.parent)
+        ngo_project = attrs.get("ngo_project")
+        if "ngo_project" not in attrs and self.instance:
+            ngo_project = self.instance.ngo_project
+        ngo_project_id = getattr(ngo_project, "id", ngo_project)
+        if parent is not None:
+            if parent.ngo_project_id != ngo_project_id:
+                raise serializers.ValidationError(
+                    {
+                        "parent": (
+                            "Parent account must belong to the same project "
+                            "(or both must be global)."
+                        )
+                    }
+                )
+        return attrs
+
     def create(self, validated_data):
-        validated_data['current_balance'] = validated_data.get('opening_balance', 0)
+        code = validated_data.get("code") or ""
+        if not str(code).strip():
+            validated_data.pop("code", None)
+        validated_data["current_balance"] = validated_data.get("opening_balance", 0)
         return super().create(validated_data)
 
 
@@ -80,6 +117,13 @@ class AccountDetailSerializer(serializers.ModelSerializer):
     )
     tags_detail = serializers.SerializerMethodField()
     sub_accounts = serializers.SerializerMethodField()
+    is_global = serializers.SerializerMethodField()
+    ngo_project_title = serializers.CharField(
+        source="ngo_project.title", read_only=True, default=""
+    )
+    liquidity_type = serializers.CharField(
+        source="account_type.liquidity_type", read_only=True, default=""
+    )
 
     class Meta:
         model = Account
@@ -93,13 +137,11 @@ class AccountDetailSerializer(serializers.ModelSerializer):
             obj.sub_accounts.filter(is_active=True), many=True
         ).data
 
+    def get_is_global(self, obj):
+        return obj.ngo_project_id is None
+
 
 class AccountTagSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccountTag
         fields = "__all__"
-
-    # def create(self, validated_data):
-    #     # Set current_balance to the value of opening_balance during account creation
-    #     validated_data['current_balance'] = validated_data.get('opening_balance', 0)
-    #     return super().create(validated_data)

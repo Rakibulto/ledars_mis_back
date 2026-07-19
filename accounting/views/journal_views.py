@@ -77,10 +77,12 @@ class JournalViewSet(viewsets.ModelViewSet):
 
 
 class JournalEntryViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
-    queryset = JournalEntry.objects.select_related("journal", "created_by").all()
+    queryset = JournalEntry.objects.select_related(
+        "journal", "created_by", "ngo_project"
+    ).all()
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["journal", "status", "date"]
+    filterset_fields = ["journal", "status", "date", "ngo_project"]
     search_fields = ["reference", "narration", "source_document"]
     ordering_fields = ["date", "reference", "total_debit", "created_at"]
     ordering_fields = ["date", "reference", "total_debit", "created_at", "id"]
