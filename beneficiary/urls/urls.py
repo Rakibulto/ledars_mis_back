@@ -4,6 +4,7 @@ from beneficiary.views import (
     BeneficiaryViewSet,
     ServiceCategoryViewSet,
     ServiceDeliveryViewSet,
+    VulnerabilityTypeViewSet,
     ImpactMeasurementViewSet,
     OutcomeIndicatorViewSet,
     ServiceRHViewSet,
@@ -50,6 +51,9 @@ router.register(
 
 router.register(
     "service_categories", ServiceCategoryViewSet, basename="service_categories"
+)
+router.register(
+    "vulnerability_types", VulnerabilityTypeViewSet, basename="vulnerability_types"
 )
 router.register(
     "service_deliveries", ServiceDeliveryViewSet, basename="service_deliveries"

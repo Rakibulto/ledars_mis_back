@@ -1,6 +1,10 @@
+from calendar import monthrange
 from io import BytesIO
 
+from django.db.models import Prefetch, Q
 from django.http import HttpResponse
+from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.utils.text import slugify
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -21,9 +25,11 @@ from .models import (
     Currency,
     ProjectManagementExpense,
     ProjectManagementPlanAttachment,
+    ProjectManagementPlanSubPlan,
     ProjectManagementPlanWorkItem,
     ProjectManagementProject,
     ProjectManagementProjectPlan,
+    ProjectManagementUnit,
 )
 from .serializers import (
     AdvanceSerializer,
@@ -33,7 +39,69 @@ from .serializers import (
     ProjectManagementPlanWorkItemSerializer,
     ProjectManagementPlanSerializer,
     ProjectManagementProjectSerializer,
+    ProjectManagementUnitSerializer,
+    ProjectOverviewSerializer,
 )
+
+
+def _resolve_overview_date_range(period, start_date_str, end_date_str):
+    today = timezone.localdate()
+    range_start = None
+    range_end = None
+
+    if period == "daily":
+        range_start = range_end = today
+    elif period == "monthly":
+        range_start = today.replace(day=1)
+        range_end = today.replace(day=monthrange(today.year, today.month)[1])
+    elif period == "yearly":
+        range_start = today.replace(month=1, day=1)
+        range_end = today.replace(month=12, day=31)
+
+    if start_date_str:
+        parsed = parse_date(start_date_str)
+        if parsed:
+            range_start = parsed
+    if end_date_str:
+        parsed = parse_date(end_date_str)
+        if parsed:
+            range_end = parsed
+
+    return range_start, range_end
+
+
+def _overview_activity_date_q(range_start, range_end):
+    """Match activities whose deliverable (end_date) or start_date falls in range."""
+    if not range_start and not range_end:
+        return Q()
+
+    if range_start and range_end:
+        return Q(end_date__gte=range_start, end_date__lte=range_end) | Q(
+            end_date__isnull=True,
+            start_date__gte=range_start,
+            start_date__lte=range_end,
+        )
+    if range_start:
+        return Q(end_date__gte=range_start) | Q(
+            end_date__isnull=True, start_date__gte=range_start
+        )
+    return Q(end_date__lte=range_end) | Q(
+        end_date__isnull=True, start_date__lte=range_end
+    )
+
+
+class ProjectManagementUnitViewSet(CreatedByMixin, viewsets.ModelViewSet):
+    serializer_class = ProjectManagementUnitSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = Pagination
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["status"]
+    search_fields = ["name", "description"]
+    ordering_fields = ["name", "created_at", "updated_at", "status"]
+    ordering = ["name"]
+
+    def get_queryset(self):
+        return ProjectManagementUnit.objects.select_related("created_by").all()
 
 
 class ProjectManagementDashboardViewSet(viewsets.ViewSet):
@@ -62,9 +130,8 @@ class ProjectManagementProjectViewSet(CreatedByMixin, viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = Pagination
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    # project_type / implementation_type are JSONField lists — not auto-filterable
     filterset_fields = [
-        "project_type",
-        "implementation_type",
         "status",
         "reporting_frequency",
         "risk_level",
@@ -100,6 +167,7 @@ class ProjectManagementProjectViewSet(CreatedByMixin, viewsets.ModelViewSet):
             "assigned_users",
             "plans__approved_by",
             "plans__assigned_users",
+            "plans__sub_plans__assigned_users",
             "plans__work_items__assigned_to",
             "plans__work_items__approved_by",
             "plans__attachments__uploaded_by",
@@ -119,6 +187,104 @@ class ProjectManagementProjectViewSet(CreatedByMixin, viewsets.ModelViewSet):
         response["Content-Disposition"] = f'attachment; filename="{file_stub}-roadmap.xlsx"'
         return response
 
+    @action(detail=False, methods=["get"], url_path="options")
+    def options(self, request):
+        """Lightweight id/title list for filter dropdowns."""
+        qs = ProjectManagementProject.objects.only("id", "title", "code").order_by("title")
+        return Response(
+            [{"id": item.id, "title": item.title, "code": item.code} for item in qs]
+        )
+
+    @action(detail=False, methods=["get"], url_path="overview")
+    def overview(self, request):
+        """
+        Lightweight project activity overview for large datasets.
+        Query params:
+          - project: project id
+          - start_date / end_date: YYYY-MM-DD
+          - period: daily | monthly | yearly
+          - pagination=true&page=&page_size=
+        """
+        project_id = request.query_params.get("project")
+        period = (request.query_params.get("period") or "").strip().lower()
+        range_start, range_end = _resolve_overview_date_range(
+            period,
+            request.query_params.get("start_date"),
+            request.query_params.get("end_date"),
+        )
+        date_q = _overview_activity_date_q(range_start, range_end)
+
+        matching_plan_ids = None
+        matching_sub_ids = None
+        if date_q:
+            matching_sub_ids = list(
+                ProjectManagementPlanSubPlan.objects.filter(date_q).values_list(
+                    "id", flat=True
+                )
+            )
+            matching_plan_ids = list(
+                ProjectManagementProjectPlan.objects.filter(date_q).values_list(
+                    "id", flat=True
+                )
+            )
+            parent_ids_from_subs = list(
+                ProjectManagementPlanSubPlan.objects.filter(
+                    id__in=matching_sub_ids
+                ).values_list("plan_id", flat=True)
+            )
+            plan_id_set = set(matching_plan_ids) | set(parent_ids_from_subs)
+
+            sub_plan_qs = (
+                ProjectManagementPlanSubPlan.objects.filter(
+                    Q(id__in=matching_sub_ids) | Q(plan_id__in=matching_plan_ids)
+                )
+                .prefetch_related("assigned_users")
+                .order_by("sort_order", "id")
+            )
+            plan_qs = (
+                ProjectManagementProjectPlan.objects.filter(id__in=plan_id_set)
+                .prefetch_related(
+                    "assigned_users",
+                    "work_items__assigned_to",
+                    "work_items__approved_by",
+                    Prefetch("sub_plans", queryset=sub_plan_qs),
+                )
+                .order_by("serial_no", "id")
+            )
+        else:
+            sub_plan_qs = ProjectManagementPlanSubPlan.objects.prefetch_related(
+                "assigned_users"
+            ).order_by("sort_order", "id")
+            plan_qs = ProjectManagementProjectPlan.objects.prefetch_related(
+                "assigned_users",
+                "work_items__assigned_to",
+                "work_items__approved_by",
+                Prefetch("sub_plans", queryset=sub_plan_qs),
+            ).order_by("serial_no", "id")
+
+        qs = ProjectManagementProject.objects.only(
+            "id", "code", "title", "short_name", "status", "start_date", "end_date"
+        ).prefetch_related("assigned_users", Prefetch("plans", queryset=plan_qs))
+
+        if project_id:
+            qs = qs.filter(id=project_id)
+
+        if date_q:
+            qs = qs.filter(
+                Q(plans__id__in=matching_plan_ids)
+                | Q(plans__sub_plans__id__in=matching_sub_ids)
+            ).distinct()
+
+        qs = qs.order_by("title", "id")
+
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            serializer = ProjectOverviewSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = ProjectOverviewSerializer(qs, many=True)
+        return Response(serializer.data)
+
 
 class ProjectManagementPlanViewSet(viewsets.ModelViewSet):
     serializer_class = ProjectManagementPlanSerializer
@@ -132,7 +298,11 @@ class ProjectManagementPlanViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return ProjectManagementProjectPlan.objects.select_related("project", "approved_by").prefetch_related(
-            "assigned_users", "work_items__assigned_to", "work_items__approved_by", "attachments__uploaded_by"
+            "assigned_users",
+            "sub_plans__assigned_users",
+            "work_items__assigned_to",
+            "work_items__approved_by",
+            "attachments__uploaded_by",
         )
 
     @action(detail=True, methods=["post"])
@@ -351,8 +521,18 @@ def build_project_management_roadmap_workbook(project):
 
     overview_rows = [
         ("Project Code", project.code or "—", "Status", project.status or "—"),
-        ("Project Title", project.title or "—", "Project Type", project.project_type or "—"),
-        ("Donor", project.donor.name if project.donor else "—", "Implementation", project.implementation_type or "—"),
+        (
+            "Project Title",
+            project.title or "—",
+            "Project Type",
+            ", ".join(project.project_type or []) or "—",
+        ),
+        (
+            "Donor",
+            project.donor.name if project.donor else "—",
+            "Implementation",
+            ", ".join(project.implementation_type or []) or "—",
+        ),
         ("Project Manager", project.project_manager.username if project.project_manager else "—", "Risk Level", project.risk_level or "—"),
         ("Start Date", project.start_date.isoformat() if project.start_date else "—", "End Date", project.end_date.isoformat() if project.end_date else "—"),
         ("Assigned Team", ", ".join(user.username for user in project.assigned_users.all()) or "—", "Reporting", project.reporting_frequency or "—"),

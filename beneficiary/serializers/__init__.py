@@ -5,6 +5,7 @@ from .core import (
     ServiceCategorySerializer,
     ServiceDeliverySerializer,
     ServiceDeliveryStatsSerializer,
+    VulnerabilityTypeSerializer,
 )
 from .case_management import (
     CaseFileSerializer,
@@ -53,6 +54,7 @@ __all__ = [
     "BeneficiarySerializer", "BeneficiarySummarySerializer",
     "ServiceRHSerializer", "ServiceCategorySerializer",
     "ServiceDeliverySerializer", "ServiceDeliveryStatsSerializer",
+    "VulnerabilityTypeSerializer",
     "CaseFileSerializer", "ProtectionCaseSerializer",
     "ConsentRecordSerializer", "SafeguardingIncidentSerializer",
     "VulnerabilityAssessmentSerializer", "ImpactMeasurementSerializer",

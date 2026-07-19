@@ -1,5 +1,13 @@
 import django_filters
-from .models import Beneficiary, ServiceRH, ServiceCategory, ServiceDelivery, ComplaintsFeedback, CaseFile
+from .models import (
+    Beneficiary,
+    ServiceRH,
+    ServiceCategory,
+    ServiceDelivery,
+    ComplaintsFeedback,
+    CaseFile,
+    VulnerabilityType,
+)
 
 
 
@@ -114,6 +122,14 @@ class ServiceCategoryFilter(django_filters.FilterSet):
         fields = [
             'status'
         ]
+
+
+class VulnerabilityTypeFilter(django_filters.FilterSet):
+    status = django_filters.BooleanFilter(field_name="status")
+
+    class Meta:
+        model = VulnerabilityType
+        fields = ["status"]
 
 
 class ServiceDeliveryFilter(django_filters.FilterSet):

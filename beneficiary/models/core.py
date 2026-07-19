@@ -147,6 +147,22 @@ class ServiceCategory(models.Model):
         return self.name or self.pk
 
 
+class VulnerabilityType(models.Model):
+    name = models.CharField(max_length=200, unique=True)
+    description = models.TextField(null=True, blank=True)
+    status = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        "authentication.User", on_delete=models.SET_NULL, null=True, blank=True
+    )
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class ServiceDelivery(models.Model):
     STATUS_CHOICES = [
         ("Planned", "Planned"),

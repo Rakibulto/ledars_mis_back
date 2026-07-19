@@ -10,7 +10,13 @@ from paginations import Pagination
 from rest_framework.decorators import action
 from django.db.models import Count, Sum, Value, DecimalField
 from django.db.models.functions import Coalesce
-from beneficiary.models import Beneficiary, ServiceRH, ServiceCategory, ServiceDelivery
+from beneficiary.models import (
+    Beneficiary,
+    ServiceRH,
+    ServiceCategory,
+    ServiceDelivery,
+    VulnerabilityType,
+)
 from beneficiary.serializers import (
     BeneficiarySerializer,
     BeneficiarySummarySerializer,
@@ -18,6 +24,7 @@ from beneficiary.serializers import (
     ServiceCategorySerializer,
     ServiceDeliverySerializer,
     ServiceDeliveryStatsSerializer,
+    VulnerabilityTypeSerializer,
 )
 from ..serializers.core import SimpleBeneficierySerializer
 
@@ -26,6 +33,7 @@ from beneficiary.filters import (
     ServiceRHFilter,
     ServiceCategoryFilter,
     ServiceDeliveryFilter,
+    VulnerabilityTypeFilter,
 )
 from beneficiary.services import get_beneficiary_summary, get_service_delivery_stats
 
@@ -108,6 +116,20 @@ class ServiceCategoryViewSet(CreatedByMixin, ModelViewSet):
     search_fields = ["name", "description", "status", "created_by"]
     ordering_fields = ["created_at"]
     ordering = ["-created_at"]
+
+
+class VulnerabilityTypeViewSet(CreatedByMixin, ModelViewSet):
+    queryset = VulnerabilityType.objects.all()
+    serializer_class = VulnerabilityTypeSerializer
+
+    permission_classes = [IsAuthenticated]
+    pagination_class = Pagination
+
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = VulnerabilityTypeFilter
+    search_fields = ["name", "description"]
+    ordering_fields = ["name", "created_at"]
+    ordering = ["name"]
 
 
 class ServiceDeliveryViewSet(CreatedByMixin, ModelViewSet):

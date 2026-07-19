@@ -1,4 +1,4 @@
-from .core import Beneficiary, ServiceRH, ServiceCategory, ServiceDelivery
+from .core import Beneficiary, ServiceRH, ServiceCategory, ServiceDelivery, VulnerabilityType
 from .case_management import CaseFile, ProtectionCase, ConsentRecord, SafeguardingIncident
 from .assessment import VulnerabilityAssessment, ImpactMeasurement, OutcomeIndicator, NeedsAssessment
 from .household import HouseholdProfiling, CoverageArea
@@ -10,7 +10,7 @@ from .reporting import DonorReport, DuplicateRecord, AttendanceTracker, Househol
 from .settings import BeneficiarySetting
 
 __all__ = [
-    "Beneficiary", "ServiceRH", "ServiceCategory", "ServiceDelivery",
+    "Beneficiary", "ServiceRH", "ServiceCategory", "ServiceDelivery", "VulnerabilityType",
     "CaseFile", "ProtectionCase", "ConsentRecord", "SafeguardingIncident",
     "VulnerabilityAssessment", "ImpactMeasurement", "OutcomeIndicator", "NeedsAssessment",
     "HouseholdProfiling", "CoverageArea",

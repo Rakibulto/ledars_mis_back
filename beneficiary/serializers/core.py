@@ -1,5 +1,11 @@
 from rest_framework import serializers
-from beneficiary.models import Beneficiary, ServiceRH, ServiceCategory, ServiceDelivery
+from beneficiary.models import (
+    Beneficiary,
+    ServiceRH,
+    ServiceCategory,
+    ServiceDelivery,
+    VulnerabilityType,
+)
 
 
 class BeneficiarySerializer(serializers.ModelSerializer):
@@ -63,6 +69,16 @@ class ServiceCategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ServiceCategory
+        fields = "__all__"
+        read_only_fields = ["created_by"]
+
+
+class VulnerabilityTypeSerializer(serializers.ModelSerializer):
+
+    created_by = serializers.CharField(source="created_by.username", read_only=True)
+
+    class Meta:
+        model = VulnerabilityType
         fields = "__all__"
         read_only_fields = ["created_by"]
 
