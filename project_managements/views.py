@@ -15,6 +15,8 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
+from django.contrib.auth import get_user_model
+
 from inventory.views.core import CreatedByMixin
 from paginations import Pagination
 from .services.dashboard_service import build_project_management_dashboard_payload
@@ -30,6 +32,7 @@ from .models import (
     ProjectManagementProjectPlan,
     ProjectManagementUnit,
 )
+
 from .serializers import (
     AdvanceSerializer,
     ProjectManagementExpenseSerializer,
@@ -39,6 +42,12 @@ from .serializers import (
     ProjectManagementProjectSerializer,
     ProjectManagementUnitSerializer,
     ProjectOverviewSerializer,
+)
+
+User = get_user_model()
+ASSIGNED_USERS_PREFETCH = Prefetch(
+    "assigned_users",
+    queryset=User.objects.select_related("employee__designation").order_by("username"),
 )
 
 
@@ -222,13 +231,13 @@ class ProjectManagementProjectViewSet(CreatedByMixin, viewsets.ModelViewSet):
                 ProjectManagementPlanSubPlan.objects.filter(
                     Q(id__in=matching_sub_ids) | Q(plan_id__in=matching_plan_ids)
                 )
-                .prefetch_related("assigned_users")
+                .prefetch_related(ASSIGNED_USERS_PREFETCH)
                 .order_by("sort_order", "id")
             )
             plan_qs = (
                 ProjectManagementProjectPlan.objects.filter(id__in=plan_id_set)
                 .prefetch_related(
-                    "assigned_users",
+                    ASSIGNED_USERS_PREFETCH,
                     "work_items__assigned_to",
                     "work_items__approved_by",
                     Prefetch("sub_plans", queryset=sub_plan_qs),
@@ -237,10 +246,10 @@ class ProjectManagementProjectViewSet(CreatedByMixin, viewsets.ModelViewSet):
             )
         else:
             sub_plan_qs = ProjectManagementPlanSubPlan.objects.prefetch_related(
-                "assigned_users"
+                ASSIGNED_USERS_PREFETCH
             ).order_by("sort_order", "id")
             plan_qs = ProjectManagementProjectPlan.objects.prefetch_related(
-                "assigned_users",
+                ASSIGNED_USERS_PREFETCH,
                 "work_items__assigned_to",
                 "work_items__approved_by",
                 Prefetch("sub_plans", queryset=sub_plan_qs),
@@ -248,7 +257,7 @@ class ProjectManagementProjectViewSet(CreatedByMixin, viewsets.ModelViewSet):
 
         qs = ProjectManagementProject.objects.only(
             "id", "code", "title", "short_name", "status", "start_date", "end_date"
-        ).prefetch_related("assigned_users", Prefetch("plans", queryset=plan_qs))
+        ).prefetch_related(ASSIGNED_USERS_PREFETCH, Prefetch("plans", queryset=plan_qs))
 
         if project_id:
             qs = qs.filter(id=project_id)

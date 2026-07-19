@@ -22,6 +22,26 @@ from .models import (
 User = get_user_model()
 
 
+def serialize_assigned_users(users):
+    result = []
+    for user in users:
+        designation = ""
+        employee = getattr(user, "employee", None)
+        if employee is not None:
+            designation_obj = getattr(employee, "designation", None)
+            if designation_obj is not None:
+                designation = getattr(designation_obj, "name", None) or str(designation_obj)
+
+        result.append(
+            {
+                "id": user.id,
+                "username": user.username,
+                "designation": designation or "",
+            }
+        )
+    return result
+
+
 class ProjectManagementUnitSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProjectManagementUnit
@@ -59,10 +79,7 @@ class ProjectOverviewSubPlanSerializer(serializers.ModelSerializer):
         ]
 
     def get_assigned_users(self, obj):
-        return [
-            {"id": user.id, "username": user.username}
-            for user in obj.assigned_users.all().order_by("username")
-        ]
+        return serialize_assigned_users(obj.assigned_users.all().order_by("username"))
 
     def get_row_status(self, obj):
         from django.utils import timezone
@@ -104,10 +121,7 @@ class ProjectOverviewPlanSerializer(serializers.ModelSerializer):
         ]
 
     def get_assigned_users(self, obj):
-        return [
-            {"id": user.id, "username": user.username}
-            for user in obj.assigned_users.all().order_by("username")
-        ]
+        return serialize_assigned_users(obj.assigned_users.all().order_by("username"))
 
     def get_work_items(self, obj):
         # Local import avoids circular ordering with WorkItem serializer definition
@@ -132,6 +146,7 @@ class ProjectOverviewSerializer(serializers.ModelSerializer):
     plans = ProjectOverviewPlanSerializer(many=True, read_only=True)
     assigned_users = serializers.SerializerMethodField()
 
+
     class Meta:
         model = ProjectManagementProject
         fields = [
@@ -147,10 +162,7 @@ class ProjectOverviewSerializer(serializers.ModelSerializer):
         ]
 
     def get_assigned_users(self, obj):
-        return [
-            {"id": user.id, "username": user.username}
-            for user in obj.assigned_users.all().order_by("username")
-        ]
+        return serialize_assigned_users(obj.assigned_users.all().order_by("username"))
 
 
 class ProjectManagementPlanWorkItemSerializer(serializers.ModelSerializer):
