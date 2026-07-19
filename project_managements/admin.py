@@ -8,6 +8,7 @@ from .models import (
     ProjectManagementProject,
     ProjectManagementProjectMaterial,
     ProjectManagementProjectPlan,
+    ProjectManagementSubPlanUnitPeriod,
     ProjectManagementUnit,
 )
 
@@ -92,6 +93,11 @@ class ProjectManagementProjectPlanAdmin(admin.ModelAdmin):
     inlines = [ProjectManagementPlanSubPlanInline, ProjectManagementPlanAttachmentInline]
 
 
+class ProjectManagementSubPlanUnitPeriodInline(admin.TabularInline):
+    model = ProjectManagementSubPlanUnitPeriod
+    extra = 0
+
+
 @admin.register(ProjectManagementPlanSubPlan)
 class ProjectManagementPlanSubPlanAdmin(admin.ModelAdmin):
     list_display = (
@@ -107,6 +113,7 @@ class ProjectManagementPlanSubPlanAdmin(admin.ModelAdmin):
     )
     search_fields = ("serial_code", "title", "plan__title", "plan__project__title", "unit_type")
     filter_horizontal = ("assigned_users",)
+    inlines = [ProjectManagementSubPlanUnitPeriodInline]
 
 
 @admin.register(ProjectManagementPlanAttachment)

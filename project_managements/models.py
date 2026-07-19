@@ -103,6 +103,14 @@ class ProjectManagementProject(models.Model):
     end_date = models.DateField(null=True, blank=True)
     duration_months = models.PositiveIntegerField(default=0)
     budget_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    budget = models.ForeignKey(
+        "procurement.Budget",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="project_management_projects",
+        help_text="Linked procurement budget for this project plan expenditure",
+    )
     currency = models.CharField(max_length=12, default="BDT")
     project_manager = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -379,6 +387,55 @@ class ProjectManagementPlanSubPlan(models.Model):
             kwargs["update_fields"] = list(update_fields)
 
         super().save(*args, **kwargs)
+
+
+class ProjectManagementSubPlanUnitPeriod(models.Model):
+    """
+    Date-range unit distribution for a sub activity.
+    Each row: start_date → end_date with unit_no for that span.
+    Weekly / monthly / yearly expenditure views aggregate from these ranges.
+  """
+
+    PERIOD_RANGE = "range"
+    PERIOD_MONTHLY = "monthly"  # legacy
+    PERIOD_WEEKLY = "weekly"  # legacy
+    PERIOD_YEARLY = "yearly"  # legacy
+    PERIOD_TYPE_CHOICES = (
+        (PERIOD_RANGE, "Date range"),
+        (PERIOD_MONTHLY, "Monthly"),
+        (PERIOD_WEEKLY, "Weekly"),
+        (PERIOD_YEARLY, "Yearly"),
+    )
+
+    sub_plan = models.ForeignKey(
+        ProjectManagementPlanSubPlan,
+        on_delete=models.CASCADE,
+        related_name="unit_periods",
+    )
+    period_type = models.CharField(
+        max_length=16, choices=PERIOD_TYPE_CHOICES, default=PERIOD_RANGE
+    )
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    year = models.PositiveIntegerField(default=0)
+    month = models.PositiveIntegerField(default=0)
+    week = models.PositiveIntegerField(default=0)
+    unit_no = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["start_date", "year", "month", "week", "id"]
+
+    def __str__(self):
+        if self.start_date and self.end_date:
+            return f"{self.sub_plan.serial_code} {self.start_date} → {self.end_date}: {self.unit_no}"
+        label = f"{self.year}"
+        if self.month:
+            label += f"-{self.month:02d}"
+        if self.week:
+            label += f" W{self.week}"
+        return f"{self.sub_plan.serial_code} {label}: {self.unit_no}"
 
 
 class ProjectManagementPlanWorkItem(models.Model):

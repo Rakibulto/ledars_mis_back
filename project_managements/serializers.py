@@ -1,4 +1,5 @@
 import decimal
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -16,8 +17,10 @@ from .models import (
     ProjectManagementProject,
     ProjectManagementProjectMaterial,
     ProjectManagementProjectPlan,
+    ProjectManagementSubPlanUnitPeriod,
     ProjectManagementUnit,
 )
+from .services.plan_tables_service import sync_project_procurement_budget
 
 User = get_user_model()
 
@@ -390,6 +393,21 @@ class ProjectManagementPlanAttachmentSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+class ProjectManagementSubPlanUnitPeriodSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProjectManagementSubPlanUnitPeriod
+        fields = [
+            "id",
+            "period_type",
+            "start_date",
+            "end_date",
+            "year",
+            "month",
+            "week",
+            "unit_no",
+        ]
+
+
 class ProjectManagementPlanSubPlanSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
     assigned_users = serializers.SerializerMethodField()
@@ -400,6 +418,7 @@ class ProjectManagementPlanSubPlanSerializer(serializers.ModelSerializer):
         write_only=True,
         required=False,
     )
+    unit_periods = ProjectManagementSubPlanUnitPeriodSerializer(many=True, required=False)
 
     class Meta:
         model = ProjectManagementPlanSubPlan
@@ -416,6 +435,7 @@ class ProjectManagementPlanSubPlanSerializer(serializers.ModelSerializer):
             "sort_order",
             "assigned_users",
             "assigned_user_ids",
+            "unit_periods",
             "created_at",
             "updated_at",
         ]
@@ -434,6 +454,23 @@ class ProjectManagementPlanSubPlanSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"end_date": "End date cannot be before start date."}
             )
+
+        unit_no = attrs.get("unit_no", getattr(self.instance, "unit_no", 0))
+        unit_periods = attrs.get("unit_periods")
+        if unit_periods is not None:
+            distributed_total = Decimal("0")
+            for period in unit_periods:
+                distributed_total += Decimal(str(period.get("unit_no") or 0))
+            if distributed_total and abs(distributed_total - Decimal(str(unit_no or 0))) > Decimal(
+                "0.01"
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "unit_periods": (
+                            "Sum of distributed units must equal the activity Unit No."
+                        )
+                    }
+                )
         return attrs
 
 
@@ -541,6 +578,7 @@ class ProjectManagementPlanSerializer(serializers.ModelSerializer):
         for index, sub_data in enumerate(sub_plans_data, start=1):
             sub_data = dict(sub_data)
             assigned_users = sub_data.pop("assigned_users", [])
+            unit_periods = sub_data.pop("unit_periods", None)
             sub_data.pop("id", None)
             sub_data.pop("cost", None)  # always derived from unit_no * unit_cost
             serial_code = sub_data.pop("serial_code", None) or f"{main_code}.{index}"
@@ -553,6 +591,50 @@ class ProjectManagementPlanSerializer(serializers.ModelSerializer):
             )
             if assigned_users:
                 sub_plan.assigned_users.set(assigned_users)
+            self._replace_unit_periods(sub_plan, unit_periods)
+
+    def _replace_unit_periods(self, sub_plan, unit_periods):
+        if unit_periods is None:
+            return
+
+        sub_plan.unit_periods.all().delete()
+        for period in unit_periods:
+            period = dict(period)
+            period.pop("id", None)
+            period_type = period.get("period_type") or ProjectManagementSubPlanUnitPeriod.PERIOD_RANGE
+            unit_no = Decimal(str(period.get("unit_no") or 0))
+            if unit_no <= 0:
+                continue
+
+            start_date = period.get("start_date")
+            end_date = period.get("end_date")
+            year = int(period.get("year") or 0)
+            month = int(period.get("month") or 0)
+            week = int(period.get("week") or 0)
+
+            if period_type == ProjectManagementSubPlanUnitPeriod.PERIOD_RANGE:
+                if not start_date or not end_date:
+                    continue
+                year = year or int(str(start_date)[:4])
+            elif period_type == ProjectManagementSubPlanUnitPeriod.PERIOD_MONTHLY and month:
+                from calendar import monthrange as _monthrange
+                from datetime import date as _date
+
+                last_day = _monthrange(year, month)[1]
+                start_date = _date(year, month, 1)
+                end_date = _date(year, month, last_day)
+                period_type = ProjectManagementSubPlanUnitPeriod.PERIOD_RANGE
+
+            ProjectManagementSubPlanUnitPeriod.objects.create(
+                sub_plan=sub_plan,
+                period_type=period_type,
+                start_date=start_date,
+                end_date=end_date,
+                year=year,
+                month=month,
+                week=week,
+                unit_no=unit_no,
+            )
 
     def _replace_work_items(self, plan, work_items_data):
         if work_items_data is None:
@@ -760,6 +842,7 @@ class ProjectManagementProjectSerializer(serializers.ModelSerializer):
         source="materials_expense.invoice_number",
         read_only=True,
     )
+    budget_code = serializers.CharField(source="budget.code", read_only=True)
 
     class Meta:
         model = ProjectManagementProject
@@ -777,6 +860,8 @@ class ProjectManagementProjectSerializer(serializers.ModelSerializer):
             "end_date",
             "duration_months",
             "budget_amount",
+            "budget",
+            "budget_code",
             "currency",
             "project_manager_name",
             "project_manager_id",
@@ -800,7 +885,14 @@ class ProjectManagementProjectSerializer(serializers.ModelSerializer):
             "materials_expense_id",
             "materials_expense_invoice_number",
         ]
-        read_only_fields = ["code", "duration_months", "created_at", "updated_at"]
+        read_only_fields = [
+            "code",
+            "duration_months",
+            "budget",
+            "budget_code",
+            "created_at",
+            "updated_at",
+        ]
 
     def get_assigned_users(self, obj):
         return [
@@ -828,6 +920,10 @@ class ProjectManagementProjectSerializer(serializers.ModelSerializer):
         self._replace_plans(project, plans_data)
         self._replace_materials(project, materials_data)
         self._sync_materials_expense(project)
+        request = self.context.get("request")
+        sync_project_procurement_budget(
+            project, user=getattr(request, "user", None) if request else None
+        )
         return project
 
     @transaction.atomic
@@ -851,6 +947,12 @@ class ProjectManagementProjectSerializer(serializers.ModelSerializer):
 
         if materials_data is not None or plans_data is not None:
             self._sync_materials_expense(instance)
+
+        if plans_data is not None:
+            request = self.context.get("request")
+            sync_project_procurement_budget(
+                instance, user=getattr(request, "user", None) if request else None
+            )
 
         return instance
 

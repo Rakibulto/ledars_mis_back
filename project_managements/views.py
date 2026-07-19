@@ -21,6 +21,10 @@ from inventory.views.core import CreatedByMixin
 from paginations import Pagination
 from .services.dashboard_service import build_project_management_dashboard_payload
 from .services.expense_export_service import build_project_management_expense_pdf_bytes
+from .services.plan_tables_service import (
+    build_action_plan_payload,
+    build_expenditure_payload,
+)
 
 from .models import (
     Advance,
@@ -155,12 +159,13 @@ class ProjectManagementProjectViewSet(CreatedByMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         return ProjectManagementProject.objects.select_related(
-            "donor", "project_manager", "created_by", "materials_expense"
+            "donor", "project_manager", "created_by", "materials_expense", "budget"
         ).prefetch_related(
             "assigned_users",
             "plans__approved_by",
             "plans__assigned_users",
             "plans__sub_plans__assigned_users",
+            "plans__sub_plans__unit_periods",
             "plans__work_items__assigned_to",
             "plans__work_items__approved_by",
             "plans__attachments__uploaded_by",
@@ -179,6 +184,46 @@ class ProjectManagementProjectViewSet(CreatedByMixin, viewsets.ModelViewSet):
         )
         response["Content-Disposition"] = f'attachment; filename="{file_stub}-roadmap.xlsx"'
         return response
+
+    @action(detail=True, methods=["get"], url_path="expenditure")
+    def expenditure(self, request, pk=None):
+        project = (
+            ProjectManagementProject.objects.select_related("donor", "budget")
+            .prefetch_related(
+                "plans__sub_plans__unit_periods",
+            )
+            .filter(pk=pk)
+            .first()
+        )
+        if project is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        period = request.query_params.get("period") or "yearly"
+        return Response(build_expenditure_payload(project, period=period))
+
+    @action(detail=True, methods=["get"], url_path="action-plan")
+    def action_plan(self, request, pk=None):
+        assigned_users_qs = User.objects.select_related("employee__designation")
+        sub_plan_qs = ProjectManagementPlanSubPlan.objects.prefetch_related(
+            Prefetch("assigned_users", queryset=assigned_users_qs)
+        ).order_by("sort_order", "id")
+        plan_qs = ProjectManagementProjectPlan.objects.prefetch_related(
+            Prefetch("assigned_users", queryset=assigned_users_qs),
+            Prefetch("sub_plans", queryset=sub_plan_qs),
+        ).order_by("serial_no", "id")
+
+        project = (
+            ProjectManagementProject.objects.prefetch_related(
+                Prefetch("plans", queryset=plan_qs)
+            )
+            .filter(pk=pk)
+            .first()
+        )
+        if project is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        year = request.query_params.get("year")
+        month = request.query_params.get("month")
+        return Response(build_action_plan_payload(project, year=year, month=month))
 
     @action(detail=False, methods=["get"], url_path="options")
     def options(self, request):
