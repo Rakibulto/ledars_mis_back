@@ -122,7 +122,7 @@ def build_project_management_expense_pdf_bytes(expense):
 
     metadata_rows = [
         ["Invoice Number", _safe_text(expense.invoice_number), "Status", _safe_text(expense.status)],
-        ["Expense Date", _safe_text(expense.expense_date), "Currency", _safe_text(expense.currency)],
+        ["Expense Date", _safe_text(expense.expense_date), "Currency", _safe_text(expense.currency_code)],
         ["Project", _safe_text(expense.project.title if expense.project_id else "-"), "Task", _safe_text(expense.plan.title if expense.plan_id else "-")],
         ["Vendor / Payee", _safe_text(expense.vendor_name), "Prepared By", _safe_text(expense.created_by.username if expense.created_by_id else "-")],
     ]
@@ -163,8 +163,8 @@ def build_project_management_expense_pdf_bytes(expense):
                 _safe_text(item.title),
                 _safe_text(item.description),
                 f"{float(item.quantity or 0):,.2f}",
-                _format_currency(item.unit_price, expense.currency),
-                _format_currency(item.line_total, expense.currency),
+                _format_currency(item.unit_price, expense.currency_code),
+                _format_currency(item.line_total, expense.currency_code),
             ]
         )
 
@@ -187,7 +187,7 @@ def build_project_management_expense_pdf_bytes(expense):
     )
     story.append(items_table)
 
-    totals_rows = [["Total", _format_currency(expense.total_amount, expense.currency)]]
+    totals_rows = [["Total", _format_currency(expense.total_amount, expense.currency_code)]]
     totals_table = Table(totals_rows, colWidths=[44 * mm, 36 * mm], hAlign="RIGHT")
     totals_table.setStyle(
         TableStyle(

@@ -15,6 +15,42 @@ class ProjectManagementSequence(models.Model):
         return f"{self.year} - {self.last_number}"
 
 
+class Currency(models.Model):
+    STATUS_CHOICES = (
+        ("active", "Active"),
+        ("inactive", "Inactive"),
+    )
+
+    code = models.CharField(max_length=10, unique=True, help_text="ISO currency code, e.g. USD")
+    name = models.CharField(max_length=100, blank=True)
+    symbol = models.CharField(max_length=10, blank=True)
+    exchange_rate = models.DecimalField(
+        max_digits=20,
+        decimal_places=10,
+        default=1,
+        help_text="Exchange rate relative to the base currency (1 unit of this currency = rate * base).",
+    )
+    base_currency = models.CharField(
+        max_length=10,
+        blank=True,
+        help_text="Reference/base currency code this rate is expressed against, e.g. BDT.",
+    )
+    decimal_places = models.PositiveSmallIntegerField(default=2)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["code"]
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+    def save(self, *args, **kwargs):
+        self.code = (self.code or "").strip().upper()
+        super().save(*args, **kwargs)
+
+
 class ProjectManagementExpenseSequence(models.Model):
     key = models.CharField(max_length=32, unique=True, default="expense")
     last_number = models.PositiveIntegerField(default=0)
@@ -111,7 +147,13 @@ class ProjectManagementProject(models.Model):
         related_name="project_management_projects",
         help_text="Linked procurement budget for this project plan expenditure",
     )
-    currency = models.CharField(max_length=12, default="BDT")
+    currency = models.ForeignKey(
+        Currency,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="projects",
+    )
     project_manager = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -163,6 +205,10 @@ class ProjectManagementProject(models.Model):
     def __str__(self):
         return self.title
 
+    @property
+    def currency_code(self):
+        return self.currency.code if self.currency_id else "BDT"
+
     def save(self, *args, **kwargs):
         is_new = self._state.adding
 
@@ -199,7 +245,7 @@ class ProjectManagementProject(models.Model):
                 transaction_date=self.start_date or timezone.now().date(),
                 transaction_type="donation",
                 amount=self.budget_amount,
-                currency=self.currency or "BDT",
+                currency=self.currency.code if self.currency else "BDT",
                 reference=self.code,
                 description=f"Project budget allocated: {self.title}",
                 related_project=self,
@@ -656,7 +702,13 @@ class ProjectManagementExpense(models.Model):
     description = models.TextField(blank=True)
     vendor_name = models.CharField(max_length=255, blank=True)
     expense_date = models.DateField(default=timezone.localdate)
-    currency = models.CharField(max_length=12, default="BDT")
+    currency = models.ForeignKey(
+        Currency,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="expenses",
+    )
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="Draft")
     total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     submitted_at = models.DateTimeField(null=True, blank=True)
@@ -684,6 +736,10 @@ class ProjectManagementExpense(models.Model):
 
     def __str__(self):
         return self.invoice_number or self.title
+
+    @property
+    def currency_code(self):
+        return self.currency.code if self.currency_id else "BDT"
 
     def save(self, *args, **kwargs):
         if self.plan_id and self.plan.project_id != self.project_id:
@@ -747,7 +803,7 @@ class ProjectManagementExpense(models.Model):
                     transaction_date=now.date(),
                     transaction_type="debit",
                     amount=self.total_amount,
-                    currency=self.currency or "BDT",
+                    currency=self.currency.code if self.currency else "BDT",
                     reference=self.invoice_number,
                     description=f"Expense paid: {self.title}",
                     related_project=self.project,

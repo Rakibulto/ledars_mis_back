@@ -24,6 +24,28 @@ class BankAccountSerializer(serializers.ModelSerializer):
         model = BankAccount
         fields = "__all__"
 
+    def validate(self, attrs):
+        status_val = attrs.get(
+            "status", getattr(self.instance, "status", None) or "active"
+        )
+        account = attrs.get(
+            "account", getattr(self.instance, "account", None) if self.instance else None
+        )
+        if status_val == "active" and not account:
+            raise serializers.ValidationError(
+                {"account": "Active bank/cash accounts must be linked to a CoA account."}
+            )
+        if account is not None and getattr(account, "ngo_project_id", None) is not None:
+            raise serializers.ValidationError(
+                {
+                    "account": (
+                        "Bank/cash must link to a global CoA account "
+                        "(not a project-scoped ledger)."
+                    )
+                }
+            )
+        return attrs
+
 
 class BankTransactionSerializer(serializers.ModelSerializer):
     bank_account_name = serializers.CharField(
@@ -31,6 +53,9 @@ class BankTransactionSerializer(serializers.ModelSerializer):
     )
     type_display = serializers.CharField(
         source="get_transaction_type_display", read_only=True
+    )
+    ngo_project_title = serializers.CharField(
+        source="ngo_project.title", read_only=True, default=""
     )
 
     class Meta:

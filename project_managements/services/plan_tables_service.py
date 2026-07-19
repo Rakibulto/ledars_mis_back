@@ -265,7 +265,7 @@ def build_expenditure_payload(project, period="yearly"):
     if not partner:
         partner = "LEDARS"
 
-    currency = project.currency or "BDT"
+    currency = project.currency_code
     rows = [
         {
             "row_type": "section",

@@ -100,6 +100,13 @@ class JournalEntry(models.Model):
     exchange_rate = models.DecimalField(max_digits=12, decimal_places=6, default=1)
     is_auto_generated = models.BooleanField(default=False)
     source_document = models.CharField(max_length=255, blank=True)
+    ngo_project = models.ForeignKey(
+        "project_managements.ProjectManagementProject",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="journal_entries",
+    )
     created_by = models.ForeignKey(
         "authentication.User", on_delete=models.SET_NULL, null=True, blank=True
     )

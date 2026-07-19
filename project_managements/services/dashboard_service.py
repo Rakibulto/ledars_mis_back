@@ -221,7 +221,7 @@ def build_project_management_dashboard_payload():
             "donorName": project.donor.name if project.donor else "—",
             "projectManagerName": _safe_username(project.project_manager),
             "budgetAmount": _to_float(project.budget_amount),
-            "currency": project.currency or "BDT",
+            "currency": project.currency_code,
             "derivedStatus": derived_status,
             "progressPercent": progress_percent,
             "progressSummary": progress_summary,

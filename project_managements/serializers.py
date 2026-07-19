@@ -9,6 +9,7 @@ from donor.models import Donor
 
 from .models import (
     Advance,
+    Currency,
     ProjectManagementExpense,
     ProjectManagementExpenseItem,
     ProjectManagementPlanAttachment,
@@ -842,6 +843,12 @@ class ProjectManagementProjectSerializer(serializers.ModelSerializer):
         source="materials_expense.invoice_number",
         read_only=True,
     )
+    currency = serializers.SlugRelatedField(
+        slug_field="code",
+        queryset=Currency.objects.all(),
+        allow_null=True,
+        required=False,
+    )
     budget_code = serializers.CharField(source="budget.code", read_only=True)
 
     class Meta:
@@ -1041,7 +1048,7 @@ class ProjectManagementProjectSerializer(serializers.ModelSerializer):
                 title=f"{project.title} Materials",
                 description="Auto-generated draft from the Project Materials tab.",
                 expense_date=project.start_date,
-                currency=project.currency or "BDT",
+                currency=project.currency.code if project.currency else "BDT",
                 status="Draft",
             )
             project.materials_expense = expense
@@ -1050,7 +1057,7 @@ class ProjectManagementProjectSerializer(serializers.ModelSerializer):
         expense.title = f"{project.title} Materials"
         expense.description = "Auto-generated draft from the Project Materials tab. Update the project materials or continue in Expense Management while the expense remains in draft."
         expense.expense_date = project.start_date or expense.expense_date
-        expense.currency = project.currency or expense.currency or "BDT"
+        expense.currency = project.currency or expense.currency
         expense.project = project
         expense.plan = None
         expense.save()
@@ -1117,6 +1124,12 @@ class ProjectManagementExpenseSerializer(serializers.ModelSerializer):
     created_by = serializers.SerializerMethodField()
     approved_by = serializers.SerializerMethodField()
     items = ProjectManagementExpenseItemSerializer(many=True, required=False)
+    currency = serializers.SlugRelatedField(
+        slug_field="code",
+        queryset=Currency.objects.all(),
+        allow_null=True,
+        required=False,
+    )
 
     class Meta:
         model = ProjectManagementExpense
@@ -1326,3 +1339,21 @@ class AdvanceSerializer(serializers.ModelSerializer):
     #     if request and request.user and request.user.is_authenticated:
     #         validated_data.setdefault("from_employee", request.user)
     #     return super().create(validated_data)
+
+
+class CurrencySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Currency
+        fields = [
+            "id",
+            "code",
+            "name",
+            "symbol",
+            "exchange_rate",
+            "base_currency",
+            "decimal_places",
+            "status",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]

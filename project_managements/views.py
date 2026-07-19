@@ -28,6 +28,7 @@ from .services.plan_tables_service import (
 
 from .models import (
     Advance,
+    Currency,
     ProjectManagementExpense,
     ProjectManagementPlanAttachment,
     ProjectManagementPlanSubPlan,
@@ -39,6 +40,7 @@ from .models import (
 
 from .serializers import (
     AdvanceSerializer,
+    CurrencySerializer,
     ProjectManagementExpenseSerializer,
     ProjectManagementPlanAttachmentSerializer,
     ProjectManagementPlanWorkItemSerializer,
@@ -120,6 +122,20 @@ class ProjectManagementDashboardViewSet(viewsets.ViewSet):
 
     def list(self, request):
         return Response(build_project_management_dashboard_payload())
+
+
+class CurrencyViewSet(viewsets.ModelViewSet):
+    serializer_class = CurrencySerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = Pagination
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["status", "base_currency"]
+    search_fields = ["code", "name", "symbol", "base_currency"]
+    ordering_fields = ["code", "name", "exchange_rate", "created_at", "updated_at"]
+    ordering = ["code"]
+
+    def get_queryset(self):
+        return Currency.objects.all()
 
 
 class ProjectManagementProjectViewSet(CreatedByMixin, viewsets.ModelViewSet):
@@ -447,7 +463,7 @@ def build_project_management_expense_workbook(expenses, include_items=True):
                 expense.vendor_name,
                 expense.expense_date.isoformat() if expense.expense_date else "",
                 expense.status,
-                expense.currency,
+                expense.currency_code,
                 float(expense.total_amount or 0),
                 expense.description,
             ]
@@ -809,7 +825,7 @@ class ProjectManagementExpenseViewSet(CreatedByMixin, viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = Pagination
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["project", "plan", "status", "currency"]
+    filterset_fields = ["project", "plan", "status", "currency__code"]
     search_fields = [
         "invoice_number",
         "title",

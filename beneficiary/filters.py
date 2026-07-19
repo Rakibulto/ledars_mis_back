@@ -14,59 +14,48 @@ from .models import (
 class BeneficiaryFilter(django_filters.FilterSet):
 
     project = django_filters.CharFilter(
-        field_name='project__name',
-        lookup_expr='iexact'   
+        field_name='projects__name',
+        lookup_expr='iexact'
     )
     name = django_filters.CharFilter(
-        field_name="name", 
-        # lookup_expr="iexact",
+        field_name="name",
         lookup_expr='icontains',
     )
-    division = django_filters.CharFilter(
-        field_name="division", 
-        lookup_expr="iexact",
-        # lookup_expr='icontains',
-    )
     district = django_filters.CharFilter(
-        field_name="district", 
+        field_name="district",
         lookup_expr="iexact",
-        # lookup_expr='icontains',
     )
     upazila = django_filters.CharFilter(
-        field_name="upazila", 
+        field_name="upazila",
         lookup_expr="iexact",
-        # lookup_expr='icontains',
     )
     union = django_filters.CharFilter(
-        field_name="union", 
+        field_name="union",
         lookup_expr="iexact",
-        # lookup_expr='icontains',
     )
     village = django_filters.CharFilter(
-        field_name="village", 
+        field_name="village",
         lookup_expr="iexact",
-        # lookup_expr='icontains',
-    )
-    status = django_filters.CharFilter(
-        field_name="status", 
-        lookup_expr="iexact",
-        # lookup_expr='icontains',
     )
     sex = django_filters.CharFilter(
-        field_name="sex", 
+        field_name="sex",
         lookup_expr="iexact",
-        # lookup_expr='icontains',
     )
-    marital_status = django_filters.CharFilter(
-        field_name="marital_status", 
+    household_type = django_filters.CharFilter(
+        field_name="household_type",
         lookup_expr="iexact",
-        # lookup_expr='icontains',
+    )
+    education_level = django_filters.CharFilter(
+        field_name="education_level",
+        lookup_expr="iexact",
     )
 
     class Meta:
         model = Beneficiary
-        fields = ['project', 'name', 'division', 'district', 'upazila',
-                  'union', 'village', 'marital_status', 'sex', 'status',]
+        fields = [
+            'project', 'name', 'district', 'upazila',
+            'union', 'village', 'sex', 'household_type', 'education_level',
+        ]
 
 
 

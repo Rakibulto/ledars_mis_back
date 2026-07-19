@@ -1,4 +1,6 @@
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q, UniqueConstraint
 
 
 class AccountType(models.Model):
@@ -27,6 +29,7 @@ class AccountType(models.Model):
     include_initial_balance = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
     class Meta:
         ordering = ["-id"]
 
@@ -63,9 +66,23 @@ class AccountGroup(models.Model):
 
 
 class Account(models.Model):
+    """
+    Chart of Accounts ledger.
 
-    code = models.CharField(max_length=20, unique=True)
+    - ngo_project set → project-owned account (each project has its own CoA)
+    - ngo_project null → global account (used for shared Bank/Cash ledgers)
+    """
+
+    code = models.CharField(max_length=20)
     name = models.CharField(max_length=255)
+    ngo_project = models.ForeignKey(
+        "project_managements.ProjectManagementProject",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="chart_accounts",
+        help_text="Null = global (shared bank/cash). Set = project-scoped CoA.",
+    )
     account_type = models.ForeignKey(
         AccountType, on_delete=models.SET_NULL, null=True, blank=True, related_name="accounts"
     )
@@ -106,16 +123,57 @@ class Account(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            UniqueConstraint(
+                fields=["code"],
+                condition=Q(ngo_project__isnull=True),
+                name="uniq_account_code_global",
+            ),
+            UniqueConstraint(
+                fields=["ngo_project", "code"],
+                condition=Q(ngo_project__isnull=False),
+                name="uniq_account_code_per_project",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.parent_id:
+            parent = self.parent
+            if parent is None and self.parent_id:
+                parent = Account.objects.filter(pk=self.parent_id).first()
+            if parent and parent.ngo_project_id != self.ngo_project_id:
+                raise ValidationError(
+                    {
+                        "parent": (
+                            "Parent account must belong to the same project "
+                            "(or both must be global)."
+                        )
+                    }
+                )
 
     def save(self, *args, **kwargs):
         if not self.pk and not self.code:
-            existing_nums = list(
-                Account.objects.filter(code__regex=r'^ACC-\d+$')
-                .values_list('code', flat=True)
-            )
-            nums = [int(c.split('-')[1]) for c in existing_nums if c]
+            qs = Account.objects.filter(code__regex=r"^ACC-\d+$")
+            if self.ngo_project_id:
+                qs = qs.filter(ngo_project_id=self.ngo_project_id)
+            else:
+                qs = qs.filter(ngo_project__isnull=True)
+            existing_nums = list(qs.values_list("code", flat=True))
+            nums = [int(c.split("-")[1]) for c in existing_nums if c]
             next_num = max(nums) + 1 if nums else 1
             self.code = f"ACC-{next_num:04d}"
+        if self.parent_id:
+            parent_project_id = (
+                Account.objects.filter(pk=self.parent_id)
+                .values_list("ngo_project_id", flat=True)
+                .first()
+            )
+            if parent_project_id != self.ngo_project_id:
+                raise ValidationError(
+                    "Parent account must belong to the same project "
+                    "(or both must be global)."
+                )
         super().save(*args, **kwargs)
 
     def __str__(self):

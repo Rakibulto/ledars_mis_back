@@ -46,7 +46,7 @@ class AccountGroupViewSet(viewsets.ModelViewSet):
 
 class AccountViewSet(viewsets.ModelViewSet):
     queryset = Account.objects.select_related(
-        "account_type", "account_group", "parent"
+        "account_type", "account_group", "parent", "ngo_project"
     ).all()
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
@@ -61,6 +61,25 @@ class AccountViewSet(viewsets.ModelViewSet):
     ordering_fields = ["code", "name", "current_balance", "created_at"]
     ordering = ["-created_at"]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        ngo_project = self.request.query_params.get("ngo_project")
+        global_only = self.request.query_params.get("global_only")
+        if global_only in ("1", "true", "True"):
+            return qs.filter(ngo_project__isnull=True)
+        if ngo_project:
+            # Project CoA + shared global bank/cash ledgers (active only)
+            return qs.filter(
+                models.Q(ngo_project_id=ngo_project)
+                | models.Q(
+                    ngo_project__isnull=True,
+                    account_type__liquidity_type="bank_cash",
+                    is_active=True,
+                    is_deprecated=False,
+                )
+            ).distinct()
+        return qs
+
     def get_serializer_class(self):
         if self.action in ["list"]:
             return AccountListSerializer
@@ -73,12 +92,29 @@ class AccountViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+    def destroy(self, request, *args, **kwargs):
+        account = self.get_object()
+        if account.ngo_project_id is None and (
+            getattr(account.account_type, "liquidity_type", None) == "bank_cash"
+            or account.bank_accounts.exists()
+        ):
+            return Response(
+                {
+                    "detail": (
+                        "Global bank/cash accounts cannot be deleted from a "
+                        "project chart. Manage them under Bank / Cash masters."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().destroy(request, *args, **kwargs)
+
     @action(detail=False, methods=["get"])
     def tree(self, request):
         """Return chart of accounts as a hierarchical tree."""
         accounts = self.filter_queryset(self.get_queryset()).filter(
-        parent__isnull=True, is_active=True
-)
+            parent__isnull=True, is_active=True
+        )
         serializer = AccountListSerializer(accounts, many=True)
         return Response(serializer.data)
 
@@ -88,10 +124,9 @@ class AccountViewSet(viewsets.ModelViewSet):
         from django.db.models import Sum, Count
 
         data = {}
+        qs_base = self.get_queryset().filter(is_active=True)
         for classification in ["asset", "liability", "equity", "income", "expense"]:
-            qs = Account.objects.filter(
-                account_type__classification=classification, is_active=True
-            )
+            qs = qs_base.filter(account_type__classification=classification)
             agg = qs.aggregate(
                 total_balance=Sum("current_balance"),
                 count=Count("id"),
@@ -104,14 +139,19 @@ class AccountViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"])
     def seed(self, request):
-        """Seed chart of accounts with standard NGO data."""
+        """Seed chart of accounts with standard NGO data (optionally per project)."""
         import io
-        import sys
         from django.core.management import call_command
 
+        ngo_project = request.data.get("ngo_project") or request.query_params.get(
+            "ngo_project"
+        )
         out = io.StringIO()
         try:
-            call_command("seed_chart_of_accounts", stdout=out)
+            kwargs = {"stdout": out}
+            if ngo_project:
+                kwargs["ngo_project"] = int(ngo_project)
+            call_command("seed_chart_of_accounts", **kwargs)
             message = out.getvalue().strip()
         except Exception as e:
             return Response(
@@ -119,16 +159,28 @@ class AccountViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        accounts_count = Account.objects.count()
+        accounts_qs = Account.objects.all()
+        if ngo_project:
+            accounts_qs = accounts_qs.filter(
+                models.Q(ngo_project_id=ngo_project)
+                | models.Q(
+                    ngo_project__isnull=True,
+                    account_type__liquidity_type="bank_cash",
+                )
+            )
+        accounts_count = accounts_qs.count()
         types_count = AccountType.objects.count()
         groups_count = AccountGroup.objects.count()
 
-        return Response({
-            "detail": message or "Chart of accounts seeded successfully",
-            "accounts_count": accounts_count,
-            "types_count": types_count,
-            "groups_count": groups_count,
-        })
+        return Response(
+            {
+                "detail": message or "Chart of accounts seeded successfully",
+                "accounts_count": accounts_count,
+                "types_count": types_count,
+                "groups_count": groups_count,
+                "ngo_project": ngo_project,
+            }
+        )
 
     @action(detail=False, methods=["get"])
     def relatable(self, request):
@@ -204,6 +256,7 @@ class AccountViewSet(viewsets.ModelViewSet):
         Query params:
           date_from — period start (YYYY-MM-DD), default: 1st of current month
           date_to   — period end (YYYY-MM-DD), default: last day of current month
+          ngo_project — optional ProjectManagementProject id filter
           as_of_date — legacy single-cutoff param (ignored when date_from/date_to are set)
         """
         from datetime import date
@@ -216,6 +269,7 @@ class AccountViewSet(viewsets.ModelViewSet):
         # Determine date range
         date_from = request.query_params.get("date_from")
         date_to = request.query_params.get("date_to")
+        ngo_project = request.query_params.get("ngo_project")
 
         if not date_from:
             date_from = f"{today.year}-{today.month:02d}-01"
@@ -231,6 +285,8 @@ class AccountViewSet(viewsets.ModelViewSet):
         pre_period_entries = JournalEntry.objects.filter(
             status="posted", date__lt=date_from
         )
+        if ngo_project:
+            pre_period_entries = pre_period_entries.filter(ngo_project_id=ngo_project)
         pre_period_totals = (
             JournalItem.objects.filter(journal_entry__in=pre_period_entries)
             .values("account")
@@ -251,6 +307,8 @@ class AccountViewSet(viewsets.ModelViewSet):
         period_entries = JournalEntry.objects.filter(
             status="posted", date__gte=date_from, date__lte=date_to
         )
+        if ngo_project:
+            period_entries = period_entries.filter(ngo_project_id=ngo_project)
         period_totals = (
             JournalItem.objects.filter(journal_entry__in=period_entries)
             .values("account")
@@ -271,14 +329,39 @@ class AccountViewSet(viewsets.ModelViewSet):
 
         DEBIT_CLASSIFICATIONS = {"asset", "expense"}
 
-        data = []
-        for acc in accounts:
+        from accounting.services.account_hierarchy import (
+            build_parent_and_children_maps,
+            rollup_amount_map,
+        )
+
+        account_list = list(accounts)
+        _, children_of = build_parent_and_children_maps(account_list)
+
+        # Own (non-rolled) nets / period amounts
+        own_opening_net = {}
+        own_period_dr = {}
+        own_period_cr = {}
+        own_line_count = {}
+        for acc in account_list:
             classification = acc.account_type.classification if acc.account_type else ""
             opening_bal = float(acc.opening_balance or 0)
-
-            # Opening = opening_balance + all pre-period journal activity
             pre = pre_period_map.get(acc.id, {"pre_debit": 0, "pre_credit": 0})
-            net_opening_raw = opening_bal + pre["pre_debit"] - pre["pre_credit"]
+            own_opening_net[acc.id] = opening_bal + pre["pre_debit"] - pre["pre_credit"]
+            period = period_map.get(acc.id, {"period_debit": 0, "period_credit": 0, "line_count": 0})
+            own_period_dr[acc.id] = period["period_debit"]
+            own_period_cr[acc.id] = period["period_credit"]
+            own_line_count[acc.id] = period["line_count"]
+
+        ids = [a.id for a in account_list]
+        rolled_opening = rollup_amount_map(own_opening_net, children_of, account_ids=ids)
+        rolled_period_dr = rollup_amount_map(own_period_dr, children_of, account_ids=ids)
+        rolled_period_cr = rollup_amount_map(own_period_cr, children_of, account_ids=ids)
+        rolled_lines = rollup_amount_map(own_line_count, children_of, account_ids=ids)
+
+        data = []
+        for acc in account_list:
+            classification = acc.account_type.classification if acc.account_type else ""
+            net_opening_raw = float(rolled_opening.get(acc.id, 0))
 
             if classification in DEBIT_CLASSIFICATIONS:
                 opening_dr = max(net_opening_raw, 0)
@@ -287,10 +370,9 @@ class AccountViewSet(viewsets.ModelViewSet):
                 opening_dr = abs(min(net_opening_raw, 0))
                 opening_cr = max(net_opening_raw, 0)
 
-            period = period_map.get(acc.id, {"period_debit": 0, "period_credit": 0, "line_count": 0})
-            period_dr = period["period_debit"]
-            period_cr = period["period_credit"]
-            line_count = period["line_count"]
+            period_dr = float(rolled_period_dr.get(acc.id, 0))
+            period_cr = float(rolled_period_cr.get(acc.id, 0))
+            line_count = int(rolled_lines.get(acc.id, 0))
 
             net_opening = opening_dr - opening_cr
             net_period = period_dr - period_cr
@@ -311,6 +393,7 @@ class AccountViewSet(viewsets.ModelViewSet):
                 "account_type_name": acc.account_type.name if acc.account_type else "",
                 "classification": classification,
                 "parent": acc.parent_id,
+                "is_parent": bool(children_of.get(acc.id)),
                 "is_contra": acc.is_contra,
                 "opening_dr": round(opening_dr, 2),
                 "opening_cr": round(opening_cr, 2),

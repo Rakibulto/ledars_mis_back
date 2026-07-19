@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     AdvanceViewSet,
+    CurrencyViewSet,
     ProjectManagementDashboardViewSet,
     ProjectManagementExpenseViewSet,
     ProjectManagementPlanAttachmentViewSet,
@@ -52,6 +53,11 @@ router.register(
     r"ngo-project-advances",
     AdvanceViewSet,
     basename="project-management-advances",
+)
+router.register(
+    r"currencies",
+    CurrencyViewSet,
+    basename="project-management-currencies",
 )
 
 urlpatterns = [

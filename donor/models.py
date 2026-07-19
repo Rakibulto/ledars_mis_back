@@ -1,6 +1,6 @@
 from django.db import models
 from django.utils import timezone
-from project_managements.models import ProjectManagementProject
+from project_managements.models import Currency, ProjectManagementProject
 
 #add donor
 class Donor(models.Model):
@@ -21,12 +21,18 @@ class Donor(models.Model):
     name = models.CharField(max_length=255, blank=True, null=True)
     type = models.CharField(max_length=20, choices=TYPE_CHOICES, blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
-    email = models.EmailField(blank=True, null=True)
+    email = models.CharField(max_length=254, blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     organization_name = models.CharField(max_length=255, blank=True, null=True)
     address = models.TextField(blank=True, null=True)
     total_donated_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    currency = models.CharField(max_length=10, default="USD")
+    currency = models.ForeignKey(
+        Currency,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="donors",
+    )
     last_donation_date = models.DateField(blank=True, null=True)
     description = models.TextField(null=True, blank=True)
     document = models.FileField(upload_to="donor/documents/%Y/%m/", blank=True, null=True)

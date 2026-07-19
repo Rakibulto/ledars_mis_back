@@ -60,6 +60,13 @@ class Voucher(models.Model):
         blank=True,
         related_name="vouchers",
     )
+    ngo_project = models.ForeignKey(
+        "project_managements.ProjectManagementProject",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="accounting_vouchers",
+    )
     cost_center = models.ForeignKey(
         "accounting.CostCenter", on_delete=models.SET_NULL, null=True, blank=True
     )

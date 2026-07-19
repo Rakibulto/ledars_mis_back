@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -17,10 +18,11 @@ class BankAccount(models.Model):
     swift_code = models.CharField(max_length=20, blank=True)
     account = models.ForeignKey(
         "accounting.Account",
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="bank_accounts",
+        help_text="Linked CoA ledger — required for voucher bank auto-adjustment.",
     )
     currency = models.ForeignKey(
         "accounting.Currency", on_delete=models.SET_NULL, null=True, blank=True
@@ -54,6 +56,43 @@ class BankAccount(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+    def clean(self):
+        super().clean()
+        if self.status == "active" and not self.account_id:
+            raise ValidationError(
+                {"account": "Active bank/cash accounts must be linked to a CoA account."}
+            )
+        if self.account_id:
+            linked = self.account
+            if linked is None:
+                from accounting.models import Account
+
+                linked = Account.objects.filter(pk=self.account_id).first()
+            if linked and linked.ngo_project_id is not None:
+                raise ValidationError(
+                    {
+                        "account": (
+                            "Bank/cash must link to a global CoA account "
+                            "(not a project-scoped ledger)."
+                        )
+                    }
+                )
+
+    def save(self, *args, **kwargs):
+        if self.status == "active" and not self.account_id:
+            raise ValidationError(
+                "Active bank/cash accounts must be linked to a CoA account."
+            )
+        if self.account_id:
+            from accounting.models import Account
+
+            linked = Account.objects.filter(pk=self.account_id).only("ngo_project_id").first()
+            if linked and linked.ngo_project_id is not None:
+                raise ValidationError(
+                    "Bank/cash must link to a global CoA account (not project-scoped)."
+                )
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.bank_name} - {self.account_number}"
@@ -89,6 +128,24 @@ class BankTransaction(models.Model):
         null=True,
         blank=True,
         related_name="bank_transactions",
+    )
+    ngo_project = models.ForeignKey(
+        "project_managements.ProjectManagementProject",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bank_transactions",
+    )
+    voucher = models.ForeignKey(
+        "accounting.Voucher",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bank_transactions",
+    )
+    is_system_generated = models.BooleanField(
+        default=False,
+        help_text="True when created automatically from voucher posting.",
     )
     statement_line = models.CharField(max_length=255, blank=True)
     imported_at = models.DateTimeField(null=True, blank=True)
